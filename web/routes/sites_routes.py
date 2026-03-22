@@ -181,6 +181,15 @@ async def download_site(name: str, token: str = Query(...)):
     if not os.path.isdir(site_dir):
         raise HTTPException(status_code=404, detail=f"No generated configs found for '{name}'")
 
+    # Include the appropriate setup script
+    site = inv.get_site(name)
+    site_type = site.get("type", "glinet") if site else "glinet"
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    setup_script = os.path.join(
+        project_root, "scripts",
+        "glinet-setup.sh" if site_type == "glinet" else "pi-setup.sh"
+    )
+
     # Build zip in memory
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -189,6 +198,8 @@ async def download_site(name: str, token: str = Query(...)):
                 full_path = os.path.join(root, fname)
                 arc_name = os.path.relpath(full_path, site_dir)
                 zf.write(full_path, arc_name)
+        if os.path.isfile(setup_script):
+            zf.write(setup_script, os.path.basename(setup_script))
 
     buf.seek(0)
     return StreamingResponse(
