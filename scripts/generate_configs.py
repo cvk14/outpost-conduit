@@ -86,3 +86,45 @@ def generate_psk() -> str:
         ["wg", "genpsk"], capture_output=True, text=True, check=True
     )
     return result.stdout.strip()
+
+
+def generate_hub_wg_config(hub: dict, sites: list[dict], hub_private_key: str) -> str:
+    """Generate the hub's wg0.conf content."""
+    lines = [
+        "[Interface]",
+        f"Address = {hub['tunnel_ip']}/16",
+        f"ListenPort = {hub['listen_port']}",
+        f"PrivateKey = {hub_private_key}",
+        "MTU = 1420",
+        "",
+    ]
+    for site in sites:
+        lines.append(f"# {site['name']}")
+        lines.append("[Peer]")
+        lines.append(f"PublicKey = {site['public_key']}")
+        lines.append(f"PresharedKey = {site['psk']}")
+        lines.append(f"AllowedIPs = {site['tunnel_ip']}/32")
+        if site["wan_ip"] != "dynamic":
+            lines.append(f"Endpoint = {site['wan_ip']}:{hub['listen_port']}")
+        lines.append("PersistentKeepalive = 25")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def generate_site_wg_config(hub: dict, site: dict) -> str:
+    """Generate a remote site's wg0.conf content."""
+    lines = [
+        "[Interface]",
+        f"Address = {site['tunnel_ip']}/32",
+        f"PrivateKey = {site['private_key']}",
+        "MTU = 1420",
+        "",
+        "[Peer]",
+        f"PublicKey = {hub['public_key']}",
+        f"PresharedKey = {site['psk']}",
+        f"Endpoint = {hub['wan_ip']}:{hub['listen_port']}",
+        "AllowedIPs = 172.27.0.0/16",
+        "PersistentKeepalive = 25",
+        "",
+    ]
+    return "\n".join(lines)
