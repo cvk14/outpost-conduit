@@ -94,15 +94,46 @@ echo "[3/5] Restarting network (connection may drop briefly)..."
 /etc/init.d/network restart
 
 # Wait for WireGuard to come up
-echo "[4/5] Waiting for WireGuard handshake..."
+echo "[4/7] Waiting for WireGuard handshake..."
 sleep 10
 
 # --- Install GRETAP setup script ---
-echo "[5/5] Installing GRETAP..."
+echo "[5/7] Installing GRETAP..."
 cp "$CONFIG_DIR/setup-gretap.sh" /usr/bin/wg-mcast-gretap-up
 chmod 755 /usr/bin/wg-mcast-gretap-up
 
-# Create init script for GRETAP (runs after WireGuard is up)
+# --- Install multicast relay (socat-based) ---
+# GRETAP RX works (hub→site) but TX is broken on SiFlower kernel 4.14.
+# The relay forwards local mDNS multicast as unicast to the hub.
+echo "[6/7] Installing multicast relay..."
+
+# Parse hub tunnel IP from wg0.conf
+HUB_IP=$(grep "^AllowedIPs" "$CONFIG_DIR/wg0.conf" | awk '{print $3}' | cut -d/ -f1 | head -1)
+# AllowedIPs is the hub network; hub IP is always .0.1
+HUB_IP="172.27.0.1"
+
+cat > /usr/bin/wg-mcast-relay.sh << RELAYEOF
+#!/bin/sh
+# Outpost Conduit multicast relay (site mode)
+# Captures mDNS on br-lan, forwards as unicast to hub relay port
+HUB=${HUB_IP}
+
+# Kill any existing relay
+killall socat 2>/dev/null || true
+sleep 1
+
+# LAN multicast -> unicast to hub
+socat -u UDP4-RECVFROM:5353,ip-add-membership=224.0.0.251:0.0.0.0,reuseaddr,fork UDP4-SENDTO:\${HUB}:5350 &
+
+# Unicast from hub -> multicast on LAN
+socat -u UDP4-RECVFROM:5350,reuseaddr,fork UDP4-DATAGRAM:224.0.0.251:5353,bind=:0 &
+
+echo "Multicast relay running"
+RELAYEOF
+chmod 755 /usr/bin/wg-mcast-relay.sh
+
+# Create init script for GRETAP + relay
+echo "[7/7] Installing init scripts..."
 cat > /etc/init.d/wg-mcast-gretap << 'INITSCRIPT'
 #!/bin/sh /etc/rc.common
 
@@ -113,9 +144,11 @@ start() {
     # Wait for WireGuard handshake
     sleep 5
     /usr/bin/wg-mcast-gretap-up
+    /usr/bin/wg-mcast-relay.sh
 }
 
 stop() {
+    killall socat 2>/dev/null || true
     ip link del gretap0 2>/dev/null || true
 }
 INITSCRIPT
@@ -123,10 +156,12 @@ INITSCRIPT
 chmod 755 /etc/init.d/wg-mcast-gretap
 /etc/init.d/wg-mcast-gretap enable
 
-# Start GRETAP
+# Start everything
 /usr/bin/wg-mcast-gretap-up
+/usr/bin/wg-mcast-relay.sh
 
 echo ""
 echo "=== GL.iNet setup complete ==="
 echo "WireGuard: wg show"
 echo "GRETAP:    ip link show gretap0"
+echo "Relay:     ps | grep socat"

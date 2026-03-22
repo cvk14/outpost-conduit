@@ -276,7 +276,8 @@ async def hub_regenerate():
             f"sudo cp {hub_dir}/setup-bridge.sh /usr/local/bin/wg-mcast-bridge-up && "
             f"sudo cp {hub_dir}/teardown-bridge.sh /usr/local/bin/wg-mcast-bridge-down && "
             "sudo systemctl restart wg-quick@wg0 && "
-            "sudo systemctl restart wg-mcast-bridge",
+            "sudo systemctl restart wg-mcast-bridge && "
+            f"sudo bash {os.path.dirname(hub_dir)}/../scripts/relay-setup.sh 2>/dev/null || true",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )

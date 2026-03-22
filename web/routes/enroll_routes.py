@@ -43,7 +43,8 @@ async def _apply_hub_config(settings: dict) -> None:
 
     # Restart services
     proc = await asyncio.create_subprocess_shell(
-        "sudo systemctl restart wg-quick@wg0 && sudo systemctl restart wg-mcast-bridge",
+        "sudo systemctl restart wg-quick@wg0 && sudo systemctl restart wg-mcast-bridge && "
+        "sudo bash /home/chris/outpost-conduit/scripts/relay-setup.sh 2>/dev/null || true",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
