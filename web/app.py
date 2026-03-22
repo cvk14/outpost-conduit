@@ -91,9 +91,12 @@ app.mount("/static", StaticFiles(directory=str(WEB_DIR / "static")), name="stati
 # Include routers (import here to avoid circular imports).
 from web.routes.auth_routes import router as auth_router  # noqa: E402
 from web.routes.status_routes import router as status_router  # noqa: E402
+from web.routes.sites_routes import router as sites_router, hub_router  # noqa: E402
 
 app.include_router(auth_router)
 app.include_router(status_router)
+app.include_router(sites_router)
+app.include_router(hub_router)
 
 
 @app.get("/", response_class=HTMLResponse)
