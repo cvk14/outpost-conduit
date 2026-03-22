@@ -156,7 +156,7 @@ window.DashboardView = {
       html += '<div class="flex gap-sm">';
       html += '<button class="icon-btn" title="Terminal" onclick="location.hash=\'#deploy?site=' + encodeURIComponent(site.name || '') + '\'">&#9002;</button>';
       html += '<button class="icon-btn" title="Restart" onclick="DashboardView._restartSite(\'' + this._jsEscape(site.name || '') + '\')">&#8635;</button>';
-      html += '<button class="icon-btn" title="Download config" onclick="window.open(\'/api/sites/' + encodeURIComponent(site.name || '') + '/download\',\'_blank\')">&#8615;</button>';
+      html += '<button class="icon-btn" title="Download config" onclick="window.open(\'/api/sites/' + encodeURIComponent(site.name || '') + '/download?token=\' + encodeURIComponent(Auth.getToken()),\'_blank\')">&#8615;</button>';
       html += '</div>';
       html += '</td>';
       html += '</tr>';
@@ -301,7 +301,7 @@ window.DashboardView = {
     }
     // Download each site config as a zip
     for (let i = 0; i < sites.length; i++) {
-      window.open('/api/sites/' + encodeURIComponent(sites[i].name) + '/download', '_blank');
+      window.open('/api/sites/' + encodeURIComponent(sites[i].name) + '/download?token=' + encodeURIComponent(Auth.getToken()), '_blank');
     }
   },
 };

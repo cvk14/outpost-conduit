@@ -151,7 +151,7 @@ window.SitesView = {
       (function (btn) {
         btn.addEventListener('click', function () {
           var siteName = decodeURIComponent(btn.getAttribute('data-download'));
-          window.open('/api/sites/' + encodeURIComponent(siteName) + '/download', '_blank');
+          window.open('/api/sites/' + encodeURIComponent(siteName) + '/download?token=' + encodeURIComponent(Auth.getToken()), '_blank');
         });
       })(dlBtns[i]);
     }

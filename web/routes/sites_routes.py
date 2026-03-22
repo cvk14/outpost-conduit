@@ -7,7 +7,7 @@ import os
 import zipfile
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -157,8 +157,21 @@ async def generate_site(name: str):
 
 
 @router.get("/{name}/download")
-async def download_site(name: str):
-    """Download a site's config bundle as a zip file."""
+async def download_site(name: str, token: str = Query(None)):
+    """Download a site's config bundle as a zip file.
+
+    Accepts auth via Authorization header OR ?token= query param
+    (needed for direct browser downloads that can't send headers).
+    """
+    # Verify auth — try query param first (for browser downloads), then header
+    if token:
+        from web.auth import decode_token
+        try:
+            decode_token(token, get_settings()["jwt_secret"])
+        except Exception:
+            raise HTTPException(status_code=401, detail="Invalid token")
+    # If no query token, the router-level require_auth dependency handles it
+
     inv = get_inventory()
     if inv.get_site(name) is None:
         raise HTTPException(status_code=404, detail=f"Site '{name}' not found")
