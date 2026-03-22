@@ -92,11 +92,14 @@ app.mount("/static", StaticFiles(directory=str(WEB_DIR / "static")), name="stati
 from web.routes.auth_routes import router as auth_router  # noqa: E402
 from web.routes.status_routes import router as status_router  # noqa: E402
 from web.routes.sites_routes import router as sites_router, hub_router  # noqa: E402
+from web.routes.deploy_routes import router as deploy_router, ssh_ws_router  # noqa: E402
 
 app.include_router(auth_router)
 app.include_router(status_router)
 app.include_router(sites_router)
 app.include_router(hub_router)
+app.include_router(deploy_router)
+app.include_router(ssh_ws_router)
 
 
 @app.get("/", response_class=HTMLResponse)
