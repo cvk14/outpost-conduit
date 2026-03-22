@@ -15,16 +15,30 @@ fi
 
 echo "=== wg-mcast GL.iNet Setup ==="
 
-# --- Install WireGuard if needed ---
-echo "[1/4] Checking WireGuard..."
+# --- Install prerequisites ---
+echo "[1/5] Installing prerequisites..."
+opkg update 2>/dev/null || echo "Warning: opkg update failed (some repos may be unavailable)"
+
+# Install kmod-gre for GRETAP support
+if ! lsmod | grep -q ip_gre; then
+    echo "Installing kmod-gre..."
+    opkg install kmod-gre 2>/dev/null || echo "Warning: kmod-gre install failed — install manually via LuCI if needed"
+fi
+
+# Install WireGuard if needed
 if ! command -v wg >/dev/null 2>&1; then
     echo "Installing WireGuard..."
-    opkg update
-    opkg install wireguard-tools kmod-wireguard
+    opkg install wireguard-tools kmod-wireguard 2>/dev/null || echo "Warning: WireGuard install failed"
+fi
+
+# Install LuCI if needed
+if [ ! -d /www/luci-static ]; then
+    echo "Installing LuCI..."
+    opkg install luci 2>/dev/null || echo "Warning: LuCI install failed"
 fi
 
 # --- Install WireGuard config ---
-echo "[2/4] Configuring WireGuard..."
+echo "[2/5] Configuring WireGuard..."
 mkdir -p /etc/wireguard
 cp "$CONFIG_DIR/wg0.conf" /etc/wireguard/wg0.conf
 chmod 600 /etc/wireguard/wg0.conf
@@ -76,12 +90,17 @@ uci set firewall.lan_wgmcast.dest='wgmcast'
 uci commit firewall
 
 # Restart networking
+echo "[3/5] Restarting network (connection may drop briefly)..."
 /etc/init.d/network restart
 
+# Wait for WireGuard to come up
+echo "[4/5] Waiting for WireGuard handshake..."
+sleep 10
+
 # --- Install GRETAP setup script ---
-echo "[3/4] Installing GRETAP script..."
-cp "$CONFIG_DIR/setup-gretap.sh" /usr/local/bin/wg-mcast-gretap-up
-chmod 755 /usr/local/bin/wg-mcast-gretap-up
+echo "[5/5] Installing GRETAP..."
+cp "$CONFIG_DIR/setup-gretap.sh" /usr/bin/wg-mcast-gretap-up
+chmod 755 /usr/bin/wg-mcast-gretap-up
 
 # Create init script for GRETAP (runs after WireGuard is up)
 cat > /etc/init.d/wg-mcast-gretap << 'INITSCRIPT'
@@ -91,9 +110,9 @@ START=99
 STOP=10
 
 start() {
-    # Wait briefly for WireGuard handshake
+    # Wait for WireGuard handshake
     sleep 5
-    /usr/local/bin/wg-mcast-gretap-up
+    /usr/bin/wg-mcast-gretap-up
 }
 
 stop() {
@@ -104,12 +123,10 @@ INITSCRIPT
 chmod 755 /etc/init.d/wg-mcast-gretap
 /etc/init.d/wg-mcast-gretap enable
 
-# --- Start GRETAP ---
-echo "[4/4] Starting GRETAP..."
-/etc/init.d/wg-mcast-gretap start
+# Start GRETAP
+/usr/bin/wg-mcast-gretap-up
 
 echo ""
 echo "=== GL.iNet setup complete ==="
 echo "WireGuard: wg show"
 echo "GRETAP:    ip link show gretap0"
-echo "Bridge:    bridge link show"

@@ -194,19 +194,29 @@ def generate_hub_teardown_script(sites: list[dict]) -> str:
 
 def generate_glinet_gretap_script(site_tunnel_ip: str, hub_tunnel_ip: str) -> str:
     """Generate a GL.iNet (OpenWrt) GRETAP + bridge setup script."""
+    # Generate a deterministic MAC from the tunnel IP octets
+    # Format: 02:0c:XX:XX:XX:01 where XX comes from tunnel IP
+    parts = site_tunnel_ip.split(".")
+    mac = f"02:0c:{int(parts[0]):02x}:{int(parts[1]):02x}:{int(parts[2]):02x}:{int(parts[3]):02x}"
     return f"""#!/bin/sh
 set -e
 
 # wg-mcast: GL.iNet GRETAP + bridge setup
 # Run after WireGuard is up and tunnel is established.
 
-# Create GRETAP tunnel
-ip link add gretap0 type gretap local {site_tunnel_ip} remote {hub_tunnel_ip}
+# Load GRE kernel module if needed
+modprobe ip_gre 2>/dev/null || true
+
+# Create GRETAP tunnel (ignore "exists" error on re-run)
+ip link add gretap0 type gretap local {site_tunnel_ip} remote {hub_tunnel_ip} 2>/dev/null || true
+
+# Assign a deterministic MAC (some OpenWrt devices have zeroed MACs on gretap)
+ip link set dev gretap0 address {mac}
 ip link set gretap0 mtu 1380
 ip link set gretap0 up
 
 # Add GRETAP to existing LAN bridge
-ip link set gretap0 master br-lan
+ip link set gretap0 master br-lan 2>/dev/null || true
 
 echo "GL.iNet GRETAP setup complete."
 """
