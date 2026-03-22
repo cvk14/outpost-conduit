@@ -150,7 +150,7 @@ web/
 - "Add Site" form: name, type (dropdown), tunnel IP (auto-suggested next available), WAN IP, description, SSH host/user/key
 - Edit form: same fields, pre-populated
 - Delete with confirmation modal
-- After add/edit/delete: regenerates configs automatically
+- After add/edit/delete: regenerates configs in the background (does NOT restart hub services — user must explicitly click "Apply to Hub" to restart WireGuard + bridge)
 
 **Traffic:**
 - Per-site bandwidth bars showing TX/RX bytes (live-updating)
@@ -161,8 +161,14 @@ web/
 - Site selector (checkboxes for bulk operations)
 - Action dropdown: Push Config, Run Setup, Restart WireGuard, Reboot
 - "Execute" button with confirmation for destructive actions
-- Live output log panel showing SSH command output streamed via WebSocket
+- Live output log panel showing SSH command output streamed via WebSocket (`/api/ws/ssh/{name}`)
 - Bulk operations run sequentially (one site at a time)
+
+**Deploy actions explained:**
+- **Push Config:** SCP the generated output files (`wg0.conf`, `setup-gretap.sh`) to the remote device's config directory. Does NOT re-run the full initial setup script.
+- **Run Setup:** Re-runs the full setup script (`glinet-setup.sh` or `pi-setup.sh`). Only needed for first-time setup or major reconfiguration. Confirmation required.
+- **Restart WireGuard:** Restarts WireGuard + GRETAP services on the remote device.
+- **Reboot:** Reboots the remote device. Confirmation required.
 
 ### Design
 
@@ -217,7 +223,16 @@ JWT_SECRET=<generated 32-byte hex>
 
 ### `scripts/generate_configs.py`
 
-The web backend imports and calls `generate_all()`, `load_inventory()`, `validate_inventory()` directly. No changes needed — the existing module structure already supports this.
+The web backend imports and calls `generate_all()`, `load_inventory()`, `validate_inventory()` directly. These are synchronous functions (file I/O + `subprocess.run()` for `wg genkey`), so the backend wraps them with `asyncio.to_thread()` to avoid blocking the event loop. No refactoring of the existing module is needed.
+
+The web server's `PYTHONPATH` must include the project root so `from scripts.generate_configs import generate_all` works. The systemd unit sets `WorkingDirectory` to the project root; the backend adds it to `sys.path` at startup.
+
+### `sites.yaml` Write Strategy
+
+The web backend owns all writes to `sites.yaml`. To prevent corruption:
+- **Atomic writes:** Write to a temp file in the same directory, then `os.replace()` to atomically swap.
+- **File lock:** Use `fcntl.flock()` to serialize writes. The stats collector reads the file without locking (reads are safe against atomic replace).
+- **Validation:** `validate_inventory()` runs on the new state before writing. If validation fails, the write is rejected and the API returns an error.
 
 ### `sites.yaml` Schema
 
