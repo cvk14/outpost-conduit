@@ -128,3 +128,110 @@ def generate_site_wg_config(hub: dict, site: dict) -> str:
         "",
     ]
     return "\n".join(lines)
+
+
+def _sanitize_name(name: str) -> str:
+    """Sanitize site name for use in interface names (max 15 chars for Linux)."""
+    sanitized = name.replace(" ", "-").replace("_", "-")
+    return sanitized[:8]
+
+
+def generate_hub_bridge_script(hub_tunnel_ip: str, sites: list[dict], mcast_nic: str) -> str:
+    """Generate the hub's bridge + GRETAP setup script."""
+    lines = [
+        "#!/bin/bash",
+        "set -e",
+        "",
+        "# wg-mcast: Hub bridge + GRETAP setup",
+        "# Auto-generated — do not edit manually",
+        "",
+        "# Create bridge",
+        "ip link add br-mcast type bridge",
+        "ip link set br-mcast type bridge stp_state 1",
+        "ip link set br-mcast mtu 1380",
+        "ip link set br-mcast up",
+        "",
+        f"# Add multicast NIC to bridge",
+        f"ip link set {mcast_nic} master br-mcast",
+        f"ip link set {mcast_nic} up",
+        "",
+        "# Create GRETAP tunnels",
+    ]
+    for site in sites:
+        iface = f"gretap-{_sanitize_name(site['name'])}"
+        lines.extend([
+            f"# {site['name']}",
+            f"ip link add {iface} type gretap local {hub_tunnel_ip} remote {site['tunnel_ip']}",
+            f"ip link set {iface} mtu 1380",
+            f"ip link set {iface} master br-mcast",
+            f"ip link set {iface} up",
+            "",
+        ])
+    lines.append('echo "Hub bridge setup complete."')
+    return "\n".join(lines)
+
+
+def generate_hub_teardown_script(sites: list[dict]) -> str:
+    """Generate the hub's bridge teardown script."""
+    lines = [
+        "#!/bin/bash",
+        "set -e",
+        "",
+        "# wg-mcast: Hub bridge teardown",
+        "",
+    ]
+    for site in sites:
+        iface = f"gretap-{_sanitize_name(site['name'])}"
+        lines.append(f"ip link del {iface} 2>/dev/null || true")
+    lines.extend([
+        "",
+        "ip link del br-mcast 2>/dev/null || true",
+        "",
+        'echo "Hub bridge teardown complete."',
+    ])
+    return "\n".join(lines)
+
+
+def generate_glinet_gretap_script(site_tunnel_ip: str, hub_tunnel_ip: str) -> str:
+    """Generate a GL.iNet (OpenWrt) GRETAP + bridge setup script."""
+    return f"""#!/bin/sh
+set -e
+
+# wg-mcast: GL.iNet GRETAP + bridge setup
+# Run after WireGuard is up and tunnel is established.
+
+# Create GRETAP tunnel
+ip link add gretap0 type gretap local {site_tunnel_ip} remote {hub_tunnel_ip}
+ip link set gretap0 mtu 1380
+ip link set gretap0 up
+
+# Add GRETAP to existing LAN bridge
+ip link set gretap0 master br-lan
+
+echo "GL.iNet GRETAP setup complete."
+"""
+
+
+def generate_pi_gretap_script(site_tunnel_ip: str, hub_tunnel_ip: str) -> str:
+    """Generate a Raspberry Pi GRETAP + bridge setup script."""
+    return f"""#!/bin/bash
+set -e
+
+# wg-mcast: Raspberry Pi GRETAP + bridge setup
+# Run after WireGuard is up and tunnel is established.
+
+# Create GRETAP tunnel
+ip link add gretap0 type gretap local {site_tunnel_ip} remote {hub_tunnel_ip}
+ip link set gretap0 mtu 1380
+ip link set gretap0 up
+
+# Create bridge and add GRETAP + eth0
+ip link add br0 type bridge
+ip link set br0 mtu 1380
+ip link set br0 up
+
+ip link set gretap0 master br0
+ip link set eth0 master br0
+
+echo "Pi GRETAP + bridge setup complete."
+"""
