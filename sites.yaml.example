@@ -1,0 +1,26 @@
+# wg-mcast site inventory
+# Copy to sites.yaml and edit for your deployment.
+
+hub:
+  # WAN IP or hostname where remote sites connect
+  # Use a static IP or dynamic DNS hostname
+  wan_ip: "203.0.113.10"
+  tunnel_ip: "172.27.0.1"
+  listen_port: 51820
+  # mcast_nic: "eth1"  # VM NIC bridged to multicast application (default: eth1)
+
+sites:
+  - name: "site-01-example"
+    # Site type: "glinet" (OpenWrt router) or "cradlepoint" (Pi sidecar)
+    type: "glinet"
+    # Tunnel IP — must be unique per site, format: 172.27.N.1
+    tunnel_ip: "172.27.1.1"
+    # WAN IP of the remote router, or "dynamic" if behind NAT/DHCP
+    wan_ip: "198.51.100.1"
+    description: "Example GL.iNet site"
+
+  - name: "site-02-example"
+    type: "cradlepoint"
+    tunnel_ip: "172.27.2.1"
+    wan_ip: "dynamic"
+    description: "Example Cradlepoint + Pi site"

@@ -1,4 +1,8 @@
 .superpowers/
-output/*/keys/
+.venv/
+output/
 *.privatekey
 *.presharedkey
+__pycache__/
+*.pyc
+.pytest_cache/
