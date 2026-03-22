@@ -235,3 +235,117 @@ ip link set eth0 master br0
 
 echo "Pi GRETAP + bridge setup complete."
 """
+
+
+def _write_file(path: str, content: str, mode: int = 0o644) -> None:
+    """Write content to file with given permissions."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(content)
+    os.chmod(path, mode)
+
+
+def generate_all(inventory_path: str, output_dir: str) -> None:
+    """Main orchestration: load inventory, generate all configs and keys.
+
+    Preserves existing keys if they already exist in the output directory.
+    """
+    inv = load_inventory(inventory_path)
+    validate_inventory(inv)
+
+    hub = inv["hub"]
+    sites = inv["sites"]
+
+    # Generate or load hub keys
+    hub_pk_path = os.path.join(output_dir, "hub", "keys", "privatekey")
+    hub_pub_path = os.path.join(output_dir, "hub", "keys", "publickey")
+
+    if os.path.isfile(hub_pk_path) and os.path.isfile(hub_pub_path):
+        with open(hub_pk_path) as f:
+            hub_private = f.read().strip()
+        with open(hub_pub_path) as f:
+            hub_public = f.read().strip()
+    else:
+        hub_private, hub_public = generate_keypair()
+
+    hub_keys_dir = os.path.join(output_dir, "hub", "keys")
+    _write_file(os.path.join(hub_keys_dir, "privatekey"), hub_private + "\n", 0o600)
+    _write_file(os.path.join(hub_keys_dir, "publickey"), hub_public + "\n")
+
+    # Generate per-site keys and collect metadata
+    site_configs = []
+    for site in sites:
+        site_keys_dir = os.path.join(output_dir, site["name"], "keys")
+        site_pk_path = os.path.join(site_keys_dir, "privatekey")
+        site_pub_path = os.path.join(site_keys_dir, "publickey")
+        psk_path = os.path.join(site_keys_dir, "presharedkey")
+
+        if os.path.isfile(site_pk_path) and os.path.isfile(site_pub_path):
+            with open(site_pk_path) as f:
+                site_private = f.read().strip()
+            with open(site_pub_path) as f:
+                site_public = f.read().strip()
+        else:
+            site_private, site_public = generate_keypair()
+
+        if os.path.isfile(psk_path):
+            with open(psk_path) as f:
+                psk = f.read().strip()
+        else:
+            psk = generate_psk()
+
+        _write_file(os.path.join(site_keys_dir, "privatekey"), site_private + "\n", 0o600)
+        _write_file(os.path.join(site_keys_dir, "publickey"), site_public + "\n")
+        _write_file(os.path.join(site_keys_dir, "presharedkey"), psk + "\n", 0o600)
+
+        site_configs.append({
+            **site,
+            "private_key": site_private,
+            "public_key": site_public,
+            "psk": psk,
+        })
+
+    # Generate hub WireGuard config
+    hub_wg = generate_hub_wg_config(hub, site_configs, hub_private)
+    _write_file(os.path.join(output_dir, "hub", "wg0.conf"), hub_wg, 0o600)
+
+    # Generate hub bridge scripts
+    mcast_nic = hub.get("mcast_nic", "eth1")
+    bridge_script = generate_hub_bridge_script(hub["tunnel_ip"], site_configs, mcast_nic)
+    _write_file(os.path.join(output_dir, "hub", "setup-bridge.sh"), bridge_script, 0o755)
+
+    teardown_script = generate_hub_teardown_script(site_configs)
+    _write_file(os.path.join(output_dir, "hub", "teardown-bridge.sh"), teardown_script, 0o755)
+
+    # Generate per-site configs
+    hub_meta = {**hub, "public_key": hub_public}
+    for sc in site_configs:
+        site_name = sc["name"]
+        site_wg = generate_site_wg_config(hub_meta, sc)
+        _write_file(os.path.join(output_dir, site_name, "wg0.conf"), site_wg, 0o600)
+
+        if sc["type"] == "glinet":
+            gretap = generate_glinet_gretap_script(sc["tunnel_ip"], hub["tunnel_ip"])
+        else:
+            gretap = generate_pi_gretap_script(sc["tunnel_ip"], hub["tunnel_ip"])
+
+        _write_file(os.path.join(output_dir, site_name, "setup-gretap.sh"), gretap, 0o755)
+
+    print(f"Generated configs for {len(site_configs)} sites in {output_dir}/")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="wg-mcast config generator")
+    parser.add_argument("--inventory", "-i", required=True, help="Path to sites.yaml inventory file")
+    parser.add_argument("--output", "-o", default="output", help="Output directory (default: output/)")
+    args = parser.parse_args()
+
+    try:
+        generate_all(args.inventory, args.output)
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
