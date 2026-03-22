@@ -8,7 +8,7 @@ import zipfile
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 
 from web.app import get_inventory, get_settings, require_auth
@@ -196,6 +196,51 @@ async def download_site(name: str, token: str = Query(...)):
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{name}.zip"'},
     )
+
+
+@download_router.get("/{name}/install-command", response_class=PlainTextResponse)
+async def install_command(name: str, token: str = Query(...), hub: str = Query("")):
+    """Return the CLI enrollment/install command for a site."""
+    from web.auth import decode_token
+    try:
+        decode_token(token, get_settings()["jwt_secret"])
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    inv = get_inventory()
+    site = inv.get_site(name)
+    if site is None:
+        raise HTTPException(status_code=404, detail=f"Site '{name}' not found")
+
+    site_type = site.get("type", "glinet")
+    dl_url = f"{hub}/api/sites/{name}/download?token={token}"
+    setup_cmd = "sh ./glinet-setup.sh /tmp/oc-install" if site_type == "glinet" else "sudo bash ./pi-setup.sh /tmp/oc-install"
+
+    # Prerequisites by type
+    if site_type == "glinet":
+        prereqs = (
+            "# Install prerequisites (run these first if needed):\n"
+            "# opkg update && opkg install kmod-gre curl unzip\n\n"
+        )
+    else:
+        prereqs = (
+            "# Install prerequisites (run these first if needed):\n"
+            "# sudo apt-get update && sudo apt-get install -y wireguard wireguard-tools iproute2 bridge-utils curl unzip\n\n"
+        )
+
+    script = (
+        f"#!/bin/sh\n"
+        f"# Outpost Conduit — Install command for: {name}\n"
+        f"# Type: {site_type}\n"
+        f"{prereqs}"
+        f"set -e\n"
+        f"rm -rf /tmp/oc-install && mkdir -p /tmp/oc-install && cd /tmp/oc-install\n"
+        f"curl -sf \"{dl_url}\" -o config.zip && unzip -o config.zip\n"
+        f"chmod +x *.sh 2>/dev/null\n"
+        f"{setup_cmd}\n"
+        f"echo \"Done — run 'wg show' to verify\"\n"
+    )
+    return script
 
 
 # ---------------------------------------------------------------------------

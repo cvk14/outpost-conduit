@@ -85,6 +85,7 @@ window.SitesView = {
       html += '<td class="font-mono text-sm">' + (sshHost || '<span class="text-muted">&mdash;</span>') + '</td>';
       html += '<td>';
       html += '<div class="flex gap-sm">';
+      html += '<button class="icon-btn" title="Install command" data-install="' + encodeURIComponent(site.name || '') + '">&#9002;</button>';
       html += '<button class="icon-btn" title="Download config" data-download="' + encodeURIComponent(site.name || '') + '">&#8615;</button>';
       html += '<button class="icon-btn" title="Edit" data-edit="' + i + '">&#9998;</button>';
       html += '<button class="icon-btn danger" title="Delete" data-delete="' + i + '">&#10005;</button>';
@@ -155,6 +156,82 @@ window.SitesView = {
         });
       })(dlBtns[i]);
     }
+
+    // Install command buttons
+    var installBtns = this._container.querySelectorAll('[data-install]');
+    for (var i = 0; i < installBtns.length; i++) {
+      (function (btn, self) {
+        btn.addEventListener('click', function () {
+          var siteName = decodeURIComponent(btn.getAttribute('data-install'));
+          self._showInstallCommand(siteName);
+        });
+      })(installBtns[i], this);
+    }
+  },
+
+  /* ---------- Install Command Modal ---------- */
+
+  async _showInstallCommand(siteName) {
+    var token = Auth.getToken();
+    var hub = window.location.protocol + '//' + window.location.host;
+
+    try {
+      var resp = await fetch(
+        '/api/sites/' + encodeURIComponent(siteName) + '/install-command?token=' +
+        encodeURIComponent(token) + '&hub=' + encodeURIComponent(hub)
+      );
+      if (!resp.ok) throw new Error('Failed to get install command');
+      var script = await resp.text();
+    } catch (err) {
+      alert('Error: ' + err.message);
+      return;
+    }
+
+    // Build modal
+    var overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+
+    var modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.maxWidth = '700px';
+
+    var html = '';
+    html += '<div class="modal-header">';
+    html += '<h3>Install Command — ' + Utils.escapeHtml(siteName) + '</h3>';
+    html += '<button class="modal-close" id="installCmdClose">&times;</button>';
+    html += '</div>';
+    html += '<p style="margin-bottom:0.75rem;color:#94a3b8;font-size:0.875rem">SSH into the device and paste this command:</p>';
+    html += '<div class="log-output" style="max-height:300px;overflow:auto;margin-bottom:1rem;user-select:all;cursor:text;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-all">' + Utils.escapeHtml(script) + '</div>';
+    html += '<div class="form-actions">';
+    html += '<button class="btn btn-ghost" id="installCmdCopyClose">Close</button>';
+    html += '<button class="btn btn-primary" id="installCmdCopy">Copy to Clipboard</button>';
+    html += '</div>';
+
+    modal.innerHTML = html;
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    var closeModal = function () {
+      if (document.body.contains(overlay)) document.body.removeChild(overlay);
+    };
+
+    document.getElementById('installCmdClose').addEventListener('click', closeModal);
+    document.getElementById('installCmdCopyClose').addEventListener('click', closeModal);
+    overlay.addEventListener('click', function (e) {
+      if (e.target === overlay) closeModal();
+    });
+
+    document.getElementById('installCmdCopy').addEventListener('click', function () {
+      navigator.clipboard.writeText(script).then(function () {
+        var btn = document.getElementById('installCmdCopy');
+        btn.textContent = 'Copied!';
+        btn.style.background = '#22c55e';
+        setTimeout(function () {
+          btn.textContent = 'Copy to Clipboard';
+          btn.style.background = '';
+        }, 2000);
+      });
+    });
   },
 
   /* ---------- Add/Edit Form Modal ---------- */
