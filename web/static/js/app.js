@@ -288,6 +288,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (window.TrafficView)   Router.on('traffic', window.TrafficView);
   if (window.DeployView)    Router.on('deploy', window.DeployView);
   if (window.DiagnosticsView) Router.on('diagnostics', window.DiagnosticsView);
+  if (window.SettingsView) Router.on('settings', window.SettingsView);
 
   // Start router
   Router.init();

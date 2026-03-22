@@ -166,83 +166,97 @@ window.DashboardView = {
     html += '</div>'; // .table-wrap
     html += '</div>'; // .panel
 
-    // --- Bridge status panel ---
-    html += this._renderBridge(bridgePorts);
+    // --- Health status panel ---
+    html += this._renderHealth(sites);
 
     html += '</div>'; // .container
 
     container.innerHTML = html;
+
+    // Load health data async
+    this._loadHealth();
   },
 
-  _renderBridge(bridgePorts) {
-    if (!bridgePorts || bridgePorts.length === 0) {
-      return '';
+  async _loadHealth() {
+    try {
+      var health = await Api.get('/api/settings/health');
+      if (health && health.sites) {
+        this._renderHealthData(health);
+      }
+    } catch (err) {
+      // Health data not available yet
     }
+  },
 
-    // Determine overall STP state — use the most common or first port state
-    let stpState = 'unknown';
-    const stateCounts = {};
-    for (let i = 0; i < bridgePorts.length; i++) {
-      const s = (bridgePorts[i].state || 'unknown').toUpperCase();
-      stateCounts[s] = (stateCounts[s] || 0) + 1;
-      if (i === 0) stpState = s;
-    }
-
-    // STP badge color
-    const stpBadgeClass = stpState === 'FORWARDING' ? 'badge-green'
-      : stpState === 'LEARNING' ? 'badge-yellow'
-      : stpState === 'DISABLED' ? 'badge-red'
-      : 'badge-gray';
-
+  _renderHealth(sites) {
     let html = '<div class="panel">';
     html += '<div class="panel-header">';
-    html += '<span class="panel-title">Bridge: br-mcast</span>';
+    html += '<span class="panel-title">Health Monitor</span>';
     html += '<div class="flex items-center gap-sm">';
-    html += '<span class="badge ' + stpBadgeClass + '">' + Utils.escapeHtml(stpState) + '</span>';
+    html += '<a href="#diagnostics" class="btn btn-ghost btn-sm">Run Manual Test</a>';
+    html += '<a href="#settings" class="btn btn-ghost btn-sm">Configure</a>';
     html += '</div>';
     html += '</div>';
-
-    html += '<div class="bridge-grid">';
-
-    for (let i = 0; i < bridgePorts.length; i++) {
-      const port = bridgePorts[i];
-      const portName = Utils.escapeHtml(port.name || '');
-      const portState = (port.state || 'unknown').toUpperCase();
-
-      // Determine if this is the physical multicast NIC (typically eth1 or similar, not a gretap/wg port)
-      const isPhysicalNic = !portName.startsWith('gretap') && !portName.startsWith('wg') && portName !== 'br-mcast';
-      const labelSuffix = isPhysicalNic ? ' <span class="text-muted text-xs">(multicast NIC)</span>' : '';
-
-      // State badge
-      const portBadgeClass = portState === 'FORWARDING' ? 'badge-green'
-        : portState === 'LEARNING' ? 'badge-yellow'
-        : portState === 'DISABLED' ? 'badge-red'
-        : portState === 'BLOCKING' ? 'badge-red'
-        : 'badge-gray';
-
+    html += '<div id="dashHealthGrid" class="bridge-grid">';
+    // Placeholder — filled by _renderHealthData
+    for (let i = 0; i < sites.length; i++) {
+      const name = Utils.escapeHtml(sites[i].name || '');
       html += '<div class="bridge-card">';
       html += '<div class="bridge-card-header">';
-      html += '<span class="bridge-card-name font-mono" style="color:#60a5fa">' + portName + labelSuffix + '</span>';
-      html += '<span class="badge ' + portBadgeClass + '">' + portState + '</span>';
+      html += '<span class="bridge-card-name font-mono" style="color:#60a5fa">' + name + '</span>';
+      html += '<span class="badge badge-gray">Pending</span>';
       html += '</div>';
-
       html += '<div class="bridge-card-detail">';
-      html += '<span class="traffic-stat">';
-      html += '<span class="tx">&uarr; TX ' + Utils.formatBytes(port.tx_bytes) + '</span>';
-      html += ' &middot; ';
-      html += '<span class="rx">&darr; RX ' + Utils.formatBytes(port.rx_bytes) + '</span>';
-      html += ' &middot; ';
-      html += 'Err ' + ((port.rx_errors || 0) + (port.tx_errors || 0));
-      html += '</span>';
+      html += '<span class="text-muted text-sm">Waiting for health check...</span>';
       html += '</div>';
+      html += '</div>';
+    }
+    html += '</div>';
+    html += '</div>';
+    return html;
+  },
 
-      html += '</div>'; // .bridge-card
+  _renderHealthData(health) {
+    const grid = document.getElementById('dashHealthGrid');
+    if (!grid) return;
+
+    const sites = health.sites || {};
+    let cards = '';
+
+    for (const name in sites) {
+      const s = sites[name];
+      const ping = s.ping || {};
+      const mcastOut = s.multicast_out || {};
+      const mcastIn = s.multicast_in || {};
+
+      const pingOk = ping.packet_loss_pct !== undefined && ping.packet_loss_pct < 50;
+      const mcastOutOk = mcastOut.received === true;
+      const mcastInOk = mcastIn.received === true;
+      const allOk = pingOk && mcastOutOk && mcastInOk;
+
+      const overallBadge = allOk ? 'badge-green' : 'badge-red';
+      const overallText = allOk ? 'Healthy' : 'Issues';
+
+      const latency = ping.rtt_avg ? ping.rtt_avg.toFixed(1) + 'ms' : '\u2014';
+      const loss = ping.packet_loss_pct !== undefined ? ping.packet_loss_pct + '%' : '\u2014';
+
+      const age = s.timestamp ? Utils.formatAge(s.timestamp) : '';
+
+      cards += '<div class="bridge-card">';
+      cards += '<div class="bridge-card-header">';
+      cards += '<span class="bridge-card-name font-mono" style="color:#60a5fa">' + Utils.escapeHtml(name) + '</span>';
+      cards += '<span class="badge ' + overallBadge + '">' + overallText + '</span>';
+      cards += '</div>';
+      cards += '<div class="bridge-card-detail" style="display:flex;gap:1rem;flex-wrap:wrap">';
+      cards += '<span class="text-sm">Ping: <strong style="color:' + (pingOk ? '#22c55e' : '#ef4444') + '">' + latency + '</strong> (' + loss + ' loss)</span>';
+      cards += '<span class="text-sm">Mcast \u2192: <strong style="color:' + (mcastOutOk ? '#22c55e' : '#ef4444') + '">' + (mcastOutOk ? 'OK' : 'FAIL') + '</strong></span>';
+      cards += '<span class="text-sm">Mcast \u2190: <strong style="color:' + (mcastInOk ? '#22c55e' : '#ef4444') + '">' + (mcastInOk ? 'OK' : 'FAIL') + '</strong></span>';
+      if (age) cards += '<span class="text-muted text-xs">' + age + '</span>';
+      cards += '</div>';
+      cards += '</div>';
     }
 
-    html += '</div>'; // .bridge-grid
-    html += '</div>'; // .panel
-
-    return html;
+    grid.innerHTML = cards;
   },
 
   _statusBadge(status) {

@@ -11,11 +11,13 @@ from fastapi.staticfiles import StaticFiles
 from web.auth import decode_token
 from web.inventory import InventoryManager
 from web.stats import StatsCollector
+from web.health_monitor import HealthMonitor
 
 # Module-level settings populated during lifespan startup.
 _settings: dict = {}
 _inventory: InventoryManager | None = None
 _collector: StatsCollector | None = None
+_health_monitor: HealthMonitor | None = None
 
 WEB_DIR = Path(__file__).parent
 
@@ -33,6 +35,11 @@ def get_inventory() -> InventoryManager:
 def get_collector() -> StatsCollector:
     """Return the StatsCollector singleton (initialised during lifespan)."""
     return _collector
+
+
+def get_health_monitor() -> HealthMonitor:
+    """Return the HealthMonitor singleton (initialised during lifespan)."""
+    return _health_monitor
 
 
 def require_auth(request: Request) -> dict:
@@ -62,7 +69,7 @@ def require_auth(request: Request) -> dict:
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     """Load settings from environment variables on startup."""
-    global _inventory, _collector
+    global _inventory, _collector, _health_monitor
 
     _settings["admin_user"] = os.environ.get("ADMIN_USER", "admin")
     _settings["admin_password_hash"] = os.environ.get("ADMIN_PASSWORD_HASH", "")
@@ -76,7 +83,14 @@ async def lifespan(application: FastAPI):
         get_sites=lambda: _inventory.get_sites(),
     )
     _collector.start()
+    _health_monitor = HealthMonitor(
+        get_sites=lambda: _inventory.get_sites(),
+        get_inventory_path=lambda: _settings["inventory_path"],
+        get_output_dir=lambda: _settings["output_dir"],
+    )
+    _health_monitor.start()
     yield
+    _health_monitor.stop()
     _collector.stop()
     _inventory = None
     _collector = None
@@ -95,6 +109,7 @@ from web.routes.sites_routes import router as sites_router, hub_router, download
 from web.routes.deploy_routes import router as deploy_router, ssh_ws_router  # noqa: E402
 from web.routes.enroll_routes import router as enroll_router  # noqa: E402
 from web.routes.diagnostics_routes import router as diagnostics_router  # noqa: E402
+from web.routes.settings_routes import router as settings_router  # noqa: E402
 
 app.include_router(auth_router)
 app.include_router(status_router)
@@ -105,6 +120,7 @@ app.include_router(deploy_router)
 app.include_router(ssh_ws_router)
 app.include_router(enroll_router)
 app.include_router(diagnostics_router)
+app.include_router(settings_router)
 
 
 @app.get("/", response_class=HTMLResponse)
