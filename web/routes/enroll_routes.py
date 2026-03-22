@@ -56,7 +56,7 @@ async def enroll_site(body: EnrollRequest, token: str = Query(...)):
         raise HTTPException(500, "Config generation failed")
 
     # Also include the setup script in the zip
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     setup_script = os.path.join(project_root, "scripts", "glinet-setup.sh" if body.type == "glinet" else "pi-setup.sh")
 
     buf = io.BytesIO()
