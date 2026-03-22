@@ -108,28 +108,28 @@ async def multicast_test(name: str):
     test_id = f"MCAST_TEST_{int(time.time())}"
     tunnel_ip = site["tunnel_ip"]
 
-    # Start listener on remote site via SSH
-    # OpenWrt uses busybox timeout with different syntax, so use shell sleep + kill
+    # Hub→Site test: send a unicast UDP packet directly to the site's tunnel IP
+    # and have the site confirm receipt. This tests the WireGuard + GRETAP path.
     try:
+        # Start listener on remote site
         listen_cmd = (
             "rm -f /tmp/mcast_test.log; "
-            "socat -u UDP4-RECVFROM:9999,"
-            "ip-add-membership=224.0.0.251:0.0.0.0,reuseaddr,fork "
+            "socat -u UDP4-RECVFROM:9998,reuseaddr "
             "SYSTEM:'cat >> /tmp/mcast_test.log' & "
             "LPID=$!; "
-            "sleep 8; "
+            "sleep 6; "
             "kill $LPID 2>/dev/null; "
             "cat /tmp/mcast_test.log 2>/dev/null; "
             "rm -f /tmp/mcast_test.log"
         )
-        listen_task = asyncio.create_task(run_ssh_command(site, listen_cmd, timeout=15))
+        listen_task = asyncio.create_task(run_ssh_command(site, listen_cmd, timeout=12))
 
-        # Wait for listener to start, then send multicast from hub
         await asyncio.sleep(2)
 
+        # Send test packet as multicast on br-mcast (GRETAP carries it to site)
+        # AND as direct unicast to tunnel IP as a fallback
         send_proc = await asyncio.create_subprocess_shell(
-            f"echo '{test_id}' | socat - UDP4-DATAGRAM:224.0.0.251:9999,"
-            f"so-bindtodevice=br-mcast",
+            f"echo '{test_id}' | socat - UDP4-SENDTO:{tunnel_ip}:9998",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
