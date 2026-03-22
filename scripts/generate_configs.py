@@ -140,19 +140,19 @@ def generate_hub_bridge_script(hub_tunnel_ip: str, sites: list[dict], mcast_nic:
     """Generate the hub's bridge + GRETAP setup script."""
     lines = [
         "#!/bin/bash",
-        "set -e",
+        "set -euo pipefail",
         "",
         "# wg-mcast: Hub bridge + GRETAP setup",
-        "# Auto-generated — do not edit manually",
+        "# Auto-generated — idempotent (safe to re-run)",
         "",
-        "# Create bridge",
-        "ip link add br-mcast type bridge",
+        "# Create bridge (skip if exists)",
+        "ip link add br-mcast type bridge 2>/dev/null || true",
         "ip link set br-mcast type bridge stp_state 1",
         "ip link set br-mcast mtu 1380",
         "ip link set br-mcast up",
         "",
         f"# Add multicast NIC to bridge",
-        f"ip link set {mcast_nic} master br-mcast",
+        f"ip link set {mcast_nic} master br-mcast 2>/dev/null || true",
         f"ip link set {mcast_nic} up",
         "",
         "# Create GRETAP tunnels",
@@ -161,9 +161,9 @@ def generate_hub_bridge_script(hub_tunnel_ip: str, sites: list[dict], mcast_nic:
         iface = f"gretap-{_sanitize_name(site['name'])}"
         lines.extend([
             f"# {site['name']}",
-            f"ip link add {iface} type gretap local {hub_tunnel_ip} remote {site['tunnel_ip']}",
+            f"ip link add {iface} type gretap local {hub_tunnel_ip} remote {site['tunnel_ip']} 2>/dev/null || true",
             f"ip link set {iface} mtu 1380",
-            f"ip link set {iface} master br-mcast",
+            f"ip link set {iface} master br-mcast 2>/dev/null || true",
             f"ip link set {iface} up",
             "",
         ])

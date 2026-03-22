@@ -193,33 +193,39 @@ async def download_site(name: str):
 
 @hub_router.post("/regenerate")
 async def hub_regenerate():
-    """Regenerate all configs and restart hub WireGuard + bridge services."""
+    """Regenerate all configs, copy to system dirs, and restart hub services."""
     try:
         await _run_generate_all()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Config generation failed: {e}")
 
-    # Restart hub services
+    # Copy generated configs to system locations
+    settings = get_settings()
+    hub_dir = os.path.join(settings["output_dir"], "hub")
     try:
         proc = await asyncio.create_subprocess_shell(
-            "sudo systemctl restart wg-quick@wg0 && sudo systemctl restart wg-mcast-bridge",
+            f"sudo cp {hub_dir}/wg0.conf /etc/wireguard/wg0.conf && "
+            f"sudo cp {hub_dir}/setup-bridge.sh /usr/local/bin/wg-mcast-bridge-up && "
+            f"sudo cp {hub_dir}/teardown-bridge.sh /usr/local/bin/wg-mcast-bridge-down && "
+            "sudo systemctl restart wg-quick@wg0 && "
+            "sudo systemctl restart wg-mcast-bridge",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
-            logger.warning("Service restart returned code %d: %s", proc.returncode, stderr.decode())
+            logger.warning("Hub apply returned code %d: %s", proc.returncode, stderr.decode())
             return {
                 "status": "partial",
-                "message": "Configs regenerated but service restart failed",
+                "message": "Configs regenerated but apply/restart failed",
                 "error": stderr.decode().strip(),
             }
     except Exception as e:
-        logger.warning("Service restart failed: %s", e)
+        logger.warning("Hub apply failed: %s", e)
         return {
             "status": "partial",
-            "message": "Configs regenerated but service restart failed",
+            "message": "Configs regenerated but apply/restart failed",
             "error": str(e),
         }
 
-    return {"status": "ok", "message": "Configs regenerated and services restarted"}
+    return {"status": "ok", "message": "Configs regenerated, applied, and services restarted"}
