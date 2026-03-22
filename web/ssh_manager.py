@@ -44,6 +44,20 @@ _DEFAULT_USERS: dict[str, str] = {
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _resolve_keys(explicit_key: str | None = None) -> list[str]:
+    """Return a list of SSH private key paths to try.
+
+    If an explicit key is given, use only that. Otherwise try common keys
+    (RSA first for Dropbear/OpenWrt compatibility, then ed25519).
+    """
+    if explicit_key:
+        return [str(Path(explicit_key).expanduser())]
+    ssh_dir = Path.home() / ".ssh"
+    candidates = ["id_rsa", "id_ed25519", "id_ecdsa"]
+    keys = [str(ssh_dir / k) for k in candidates if (ssh_dir / k).is_file()]
+    return keys if keys else [str(ssh_dir / "id_ed25519")]
+
+
 def _ssh_config(site: dict) -> dict:
     """Extract SSH connection parameters from a site dict.
 
@@ -60,7 +74,7 @@ def _ssh_config(site: dict) -> dict:
     return {
         "host": ssh_section.get("host", site.get("tunnel_ip", "127.0.0.1")),
         "username": ssh_section.get("user", _DEFAULT_USERS.get(site_type, "root")),
-        "client_keys": [ssh_section.get("key", str(Path.home() / ".ssh" / "id_ed25519"))],
+        "client_keys": _resolve_keys(ssh_section.get("key")),
         "known_hosts": None,  # Accept any host key (VPN-internal hosts)
     }
 
