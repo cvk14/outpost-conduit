@@ -145,17 +145,46 @@ window.DiagnosticsView = {
     var p = document.createElement('div');
     p.className = 'panel';
     var inner = document.createElement('div');
-    inner.style.cssText = 'padding:2rem;text-align:center;color:#94a3b8';
-    var msg = document.createElement('div');
-    msg.textContent = 'Running ' + label + '...';
-    msg.style.marginBottom = '0.5rem';
-    inner.appendChild(msg);
-    var spinner = document.createElement('div');
-    spinner.style.fontSize = '2rem';
-    spinner.textContent = '\u23F3';
-    inner.appendChild(spinner);
+    inner.style.cssText = 'padding:1.5rem;color:#94a3b8';
+    // Animated dots spinner
+    var header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem';
+    var spinner = document.createElement('span');
+    spinner.className = 'diag-spinner';
+    spinner.textContent = '\u25CF';
+    header.appendChild(spinner);
+    var msg = document.createElement('span');
+    msg.style.fontSize = '1rem';
+    msg.textContent = label;
+    header.appendChild(msg);
+    inner.appendChild(header);
+    // Progress log
+    var log = document.createElement('div');
+    log.id = 'diagProgressLog';
+    log.className = 'log-output';
+    log.style.cssText = 'max-height:200px;font-size:12px;min-height:60px';
+    inner.appendChild(log);
     p.appendChild(inner);
     r.appendChild(p);
+    // Add CSS animation if not already present
+    if (!document.getElementById('diagSpinnerStyle')) {
+      var style = document.createElement('style');
+      style.id = 'diagSpinnerStyle';
+      style.textContent = '@keyframes diagPulse{0%,100%{opacity:0.3}50%{opacity:1}}.diag-spinner{animation:diagPulse 1s infinite;color:#60a5fa;font-size:1.25rem}';
+      document.head.appendChild(style);
+    }
+  },
+
+  _logProgress(text) {
+    var log = document.getElementById('diagProgressLog');
+    if (!log) return;
+    var line = document.createElement('div');
+    line.style.marginBottom = '0.25rem';
+    var ts = new Date();
+    var time = String(ts.getHours()).padStart(2,'0') + ':' + String(ts.getMinutes()).padStart(2,'0') + ':' + String(ts.getSeconds()).padStart(2,'0');
+    line.textContent = '[' + time + '] ' + text;
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
   },
 
   _disableButtons(disabled) {
@@ -169,12 +198,16 @@ window.DiagnosticsView = {
   async _runPing() {
     var name = this._getSiteName();
     if (!name) return;
-    this._setLoading('Ping Test');
+    this._setLoading('Ping test: ' + name);
+    this._logProgress('Sending 10 ICMP packets to ' + name + '...');
     this._disableButtons(true);
     try {
       var r = await Api.post('/api/diagnostics/ping/' + encodeURIComponent(name) + '?count=10');
+      this._logProgress('Complete: ' + r.rtt_avg.toFixed(1) + 'ms avg, ' + r.packet_loss_pct + '% loss');
+      await new Promise(function(r) { setTimeout(r, 500); });
       this._renderPing(r);
     } catch (err) {
+      this._logProgress('Failed: ' + err.message);
       this._showError('Ping', err.message);
     }
     this._disableButtons(false);
@@ -225,12 +258,18 @@ window.DiagnosticsView = {
   async _runMTU() {
     var name = this._getSiteName();
     if (!name) return;
-    this._setLoading('MTU Path Test');
+    this._setLoading('MTU path test: ' + name);
+    this._logProgress('Testing packet sizes 100-1420 bytes with do-not-fragment...');
     this._disableButtons(true);
     try {
       var r = await Api.post('/api/diagnostics/mtu/' + encodeURIComponent(name));
+      var maxMTU = 0;
+      r.results.forEach(function(t) { if (t.success) maxMTU = t.size; });
+      this._logProgress('Complete: max working payload ' + maxMTU + ' bytes');
+      await new Promise(function(r) { setTimeout(r, 500); });
       this._renderMTU(r);
     } catch (err) {
+      this._logProgress('Failed: ' + err.message);
       this._showError('MTU', err.message);
     }
     this._disableButtons(false);
@@ -312,12 +351,18 @@ window.DiagnosticsView = {
   async _runMcastOut() {
     var name = this._getSiteName();
     if (!name) return;
-    this._setLoading('Multicast Hub\u2192Site (may take ~10s)');
+    this._setLoading('Multicast hub\u2192site: ' + name);
+    this._logProgress('Starting SSH listener on remote device...');
+    this._logProgress('Sending test packet via WireGuard tunnel...');
+    this._logProgress('Waiting for response (~8 seconds)...');
     this._disableButtons(true);
     try {
       var r = await Api.post('/api/diagnostics/multicast/' + encodeURIComponent(name));
+      this._logProgress('Result: ' + (r.received ? 'PASSED' : 'FAILED'));
+      await new Promise(function(r) { setTimeout(r, 500); });
       this._renderMcast(r, 'Hub \u2192 Site');
     } catch (err) {
+      this._logProgress('Failed: ' + err.message);
       this._showError('Multicast Hub\u2192Site', err.message);
     }
     this._disableButtons(false);
@@ -326,12 +371,18 @@ window.DiagnosticsView = {
   async _runMcastReturn() {
     var name = this._getSiteName();
     if (!name) return;
-    this._setLoading('Multicast Site\u2192Hub (may take ~10s)');
+    this._setLoading('Multicast site\u2192hub: ' + name);
+    this._logProgress('Starting hub listener...');
+    this._logProgress('Sending test packet from remote site via relay...');
+    this._logProgress('Waiting for response (~8 seconds)...');
     this._disableButtons(true);
     try {
       var r = await Api.post('/api/diagnostics/multicast-return/' + encodeURIComponent(name));
+      this._logProgress('Result: ' + (r.received ? 'PASSED' : 'FAILED'));
+      await new Promise(function(r) { setTimeout(r, 500); });
       this._renderMcast(r, 'Site \u2192 Hub');
     } catch (err) {
+      this._logProgress('Failed: ' + err.message);
       this._showError('Multicast Site\u2192Hub', err.message);
     }
     this._disableButtons(false);
@@ -387,14 +438,60 @@ window.DiagnosticsView = {
   async _runAll() {
     var name = this._getSiteName();
     if (!name) return;
-    this._setLoading('All Tests (this may take 30+ seconds)');
+    this._setLoading('Running diagnostics for ' + name);
     this._disableButtons(true);
+
+    var results = {};
+    var enc = encodeURIComponent(name);
+
+    // Ping
+    this._logProgress('Starting ping test (5 packets)...');
     try {
-      var r = await Api.post('/api/diagnostics/all/' + encodeURIComponent(name));
-      this._renderAll(r);
+      results.ping = await Api.post('/api/diagnostics/ping/' + enc + '?count=5');
+      var p = results.ping;
+      this._logProgress('Ping complete: ' + p.rtt_avg.toFixed(1) + 'ms avg, ' + p.packet_loss_pct + '% loss');
     } catch (err) {
-      this._showError('All Tests', err.message);
+      results.ping = { error: err.message };
+      this._logProgress('Ping failed: ' + err.message);
     }
+
+    // MTU
+    this._logProgress('Starting MTU path test (8 sizes)...');
+    try {
+      results.mtu = await Api.post('/api/diagnostics/mtu/' + enc);
+      var maxMTU = 0;
+      results.mtu.results.forEach(function(t) { if (t.success) maxMTU = t.size; });
+      this._logProgress('MTU complete: max working payload ' + maxMTU + ' bytes');
+    } catch (err) {
+      results.mtu = { error: err.message };
+      this._logProgress('MTU test failed: ' + err.message);
+    }
+
+    // Multicast hub→site
+    this._logProgress('Starting multicast hub\u2192site test (~8s)...');
+    try {
+      results.multicast_to_site = await Api.post('/api/diagnostics/multicast/' + enc);
+      this._logProgress('Multicast hub\u2192site: ' + (results.multicast_to_site.received ? 'PASSED' : 'FAILED'));
+    } catch (err) {
+      results.multicast_to_site = { error: err.message };
+      this._logProgress('Multicast hub\u2192site failed: ' + err.message);
+    }
+
+    // Multicast site→hub
+    this._logProgress('Starting multicast site\u2192hub test (~8s)...');
+    try {
+      results.multicast_to_hub = await Api.post('/api/diagnostics/multicast-return/' + enc);
+      this._logProgress('Multicast site\u2192hub: ' + (results.multicast_to_hub.received ? 'PASSED' : 'FAILED'));
+    } catch (err) {
+      results.multicast_to_hub = { error: err.message };
+      this._logProgress('Multicast site\u2192hub failed: ' + err.message);
+    }
+
+    this._logProgress('All tests complete.');
+    // Short pause so user can see the final log before rendering results
+    await new Promise(function(r) { setTimeout(r, 1000); });
+
+    this._renderAll({ site: name, results: results });
     this._disableButtons(false);
   },
 
