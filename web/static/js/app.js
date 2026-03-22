@@ -94,7 +94,14 @@ const Router = {
 
     // Don't re-render if we're already on this view
     if (this._current === rawHash) return;
+
+    // Clean up previous view's stats listener
+    if (this._currentView && typeof this._currentView.cleanup === 'function') {
+      this._currentView.cleanup();
+    }
+
     this._current = rawHash;
+    this._currentView = view;
 
     // Update active nav link
     document.querySelectorAll('.nav-link').forEach((link) => {

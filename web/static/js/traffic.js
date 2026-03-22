@@ -32,6 +32,13 @@ window.TrafficView = {
     window.addEventListener('stats-update', this._listener);
   },
 
+  cleanup() {
+    if (this._listener) {
+      window.removeEventListener('stats-update', this._listener);
+      this._listener = null;
+    }
+  },
+
   _renderData(container, data) {
     const sites = data.sites || [];
     const bridgePorts = data.bridge_ports || [];
