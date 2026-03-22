@@ -82,7 +82,9 @@ const Router = {
    * Resolve the current hash and render the matching view.
    */
   resolve() {
-    const hash = window.location.hash.replace('#', '') || 'dashboard';
+    const rawHash = window.location.hash.replace('#', '') || 'dashboard';
+    // Strip query params — e.g. "deploy?site=X" → "deploy"
+    const hash = rawHash.split('?')[0];
     const view = this._routes[hash];
 
     if (!view) {
@@ -90,7 +92,9 @@ const Router = {
       return;
     }
 
-    this._current = hash;
+    // Don't re-render if we're already on this view
+    if (this._current === rawHash) return;
+    this._current = rawHash;
 
     // Update active nav link
     document.querySelectorAll('.nav-link').forEach((link) => {
