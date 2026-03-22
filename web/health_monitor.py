@@ -208,8 +208,8 @@ class HealthMonitor:
             "LPID=$!; sleep 6; kill $LPID 2>/dev/null; "
             "cat /tmp/hm_test.log 2>/dev/null; rm -f /tmp/hm_test.log"
         )
-        listen_task = asyncio.create_task(run_ssh_command(site, listen_cmd, timeout=12))
-        await asyncio.sleep(2)
+        listen_task = asyncio.create_task(run_ssh_command(site, listen_cmd, timeout=15))
+        await asyncio.sleep(4)
 
         send_proc = await asyncio.create_subprocess_shell(
             f"echo '{test_id}' | socat - UDP4-SENDTO:{tunnel_ip}:9998",

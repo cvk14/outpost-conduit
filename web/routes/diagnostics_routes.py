@@ -122,9 +122,10 @@ async def multicast_test(name: str):
             "cat /tmp/mcast_test.log 2>/dev/null; "
             "rm -f /tmp/mcast_test.log"
         )
-        listen_task = asyncio.create_task(run_ssh_command(site, listen_cmd, timeout=12))
+        listen_task = asyncio.create_task(run_ssh_command(site, listen_cmd, timeout=15))
 
-        await asyncio.sleep(2)
+        # Wait longer for SSH to connect and listener to start
+        await asyncio.sleep(4)
 
         # Send test packet as multicast on br-mcast (GRETAP carries it to site)
         # AND as direct unicast to tunnel IP as a fallback
