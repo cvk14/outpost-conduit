@@ -1,1 +1,35 @@
-<html><body>Outpost Conduit</body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Outpost Conduit</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <!-- Navigation -->
+  <nav class="navbar">
+    <div class="nav-left">
+      <span class="nav-logo">&#9678; Outpost Conduit</span>
+      <a href="#dashboard" class="nav-link" data-view="dashboard">Dashboard</a>
+      <a href="#sites" class="nav-link" data-view="sites">Sites</a>
+      <a href="#traffic" class="nav-link" data-view="traffic">Traffic</a>
+      <a href="#deploy" class="nav-link" data-view="deploy">Deploy</a>
+    </div>
+    <div class="nav-right">
+      <span class="nav-hub" id="hubInfo"></span>
+      <button class="btn btn-ghost" id="logoutBtn">Logout</button>
+    </div>
+  </nav>
+
+  <!-- Main content area — views render into this -->
+  <main id="content" class="content"></main>
+
+  <!-- Scripts loaded in order -->
+  <script src="/static/js/app.js"></script>
+  <script src="/static/js/dashboard.js"></script>
+  <script src="/static/js/sites.js"></script>
+  <script src="/static/js/traffic.js"></script>
+  <script src="/static/js/deploy.js"></script>
+</body>
+</html>
