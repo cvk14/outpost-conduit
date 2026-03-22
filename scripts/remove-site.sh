@@ -44,7 +44,7 @@ with open('$INVENTORY', 'w') as f:
 
 # Remove generated config directory
 if [ -d "$OUTPUT_DIR/$NAME" ]; then
-    rm -rf "$OUTPUT_DIR/$NAME"
+    rm -rf "${OUTPUT_DIR:?}/${NAME:?}"
     echo "Removed $OUTPUT_DIR/$NAME/"
 fi
 
