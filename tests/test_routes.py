@@ -162,7 +162,7 @@ class TestSitesAPI:
             with open(dummy_config, "w") as f:
                 f.write("[Interface]\nPrivateKey = dummy\n")
 
-        resp = client.get("/api/sites/site-01/download", headers=auth_headers)
+        resp = client.get("/api/sites/site-01/download?token=" + auth_headers["Authorization"].split()[1])
         assert resp.status_code == 200
         assert resp.headers["content-type"] == "application/zip"
 

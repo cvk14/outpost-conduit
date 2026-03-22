@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/sites", tags=["sites"], dependencies=[Depends(require_auth)])
 hub_router = APIRouter(prefix="/api/hub", tags=["hub"], dependencies=[Depends(require_auth)])
+# Separate router for endpoints that handle their own auth (e.g. browser downloads via query token)
+download_router = APIRouter(prefix="/api/sites", tags=["sites"])
 
 
 # ---------------------------------------------------------------------------
@@ -156,21 +158,18 @@ async def generate_site(name: str):
     return {"status": "ok", "message": f"Configs generated for {name}"}
 
 
-@router.get("/{name}/download")
-async def download_site(name: str, token: str = Query(None)):
+@download_router.get("/{name}/download")
+async def download_site(name: str, token: str = Query(...)):
     """Download a site's config bundle as a zip file.
 
-    Accepts auth via Authorization header OR ?token= query param
-    (needed for direct browser downloads that can't send headers).
+    Auth via ?token= query param (browsers can't send Authorization headers
+    on direct URL navigation / window.open).
     """
-    # Verify auth — try query param first (for browser downloads), then header
-    if token:
-        from web.auth import decode_token
-        try:
-            decode_token(token, get_settings()["jwt_secret"])
-        except Exception:
-            raise HTTPException(status_code=401, detail="Invalid token")
-    # If no query token, the router-level require_auth dependency handles it
+    from web.auth import decode_token
+    try:
+        decode_token(token, get_settings()["jwt_secret"])
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
 
     inv = get_inventory()
     if inv.get_site(name) is None:
