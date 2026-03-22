@@ -252,7 +252,7 @@ class StatsCollector:
         while True:
             try:
                 wg_output = await self._run_cmd(
-                    f"wg show {self.wg_interface} dump"
+                    f"sudo wg show {self.wg_interface} dump"
                 )
                 bridge_output = await self._run_cmd(
                     f"bridge link show {self.bridge_name}"
