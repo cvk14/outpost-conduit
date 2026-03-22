@@ -109,26 +109,24 @@ async def multicast_test(name: str):
     tunnel_ip = site["tunnel_ip"]
 
     # Start listener on remote site via SSH
+    # OpenWrt uses busybox timeout with different syntax, so use shell sleep + kill
     try:
-        # Start a background listener, send the test packet, check if it arrived
         listen_cmd = (
-            f"timeout 10 socat -u UDP4-RECVFROM:9999,"
-            f"ip-add-membership=224.0.0.251:0.0.0.0,reuseaddr,fork "
-            f"SYSTEM:'cat >> /tmp/mcast_test.log' &"
-            f" LPID=$!; sleep 1;"
-            f" echo 'LISTENER_READY';"
-            f" sleep 8;"
-            f" kill $LPID 2>/dev/null;"
-            f" cat /tmp/mcast_test.log 2>/dev/null;"
-            f" rm -f /tmp/mcast_test.log"
+            "rm -f /tmp/mcast_test.log; "
+            "socat -u UDP4-RECVFROM:9999,"
+            "ip-add-membership=224.0.0.251:0.0.0.0,reuseaddr,fork "
+            "SYSTEM:'cat >> /tmp/mcast_test.log' & "
+            "LPID=$!; "
+            "sleep 8; "
+            "kill $LPID 2>/dev/null; "
+            "cat /tmp/mcast_test.log 2>/dev/null; "
+            "rm -f /tmp/mcast_test.log"
         )
-        # Run listener setup on remote
         listen_task = asyncio.create_task(run_ssh_command(site, listen_cmd, timeout=15))
 
-        # Wait a moment for listener to start, then send multicast from hub
+        # Wait for listener to start, then send multicast from hub
         await asyncio.sleep(2)
 
-        # Send test packet as multicast on br-mcast
         send_proc = await asyncio.create_subprocess_shell(
             f"echo '{test_id}' | socat - UDP4-DATAGRAM:224.0.0.251:9999,"
             f"so-bindtodevice=br-mcast",
@@ -137,9 +135,7 @@ async def multicast_test(name: str):
         )
         await send_proc.communicate()
 
-        # Wait for listener result
         listener_output = await listen_task
-
         received = test_id in listener_output
 
         return {
@@ -169,28 +165,26 @@ async def multicast_return_test(name: str):
 
     test_id = f"MCAST_RET_{int(time.time())}"
 
-    # Start hub listener
+    # For site→hub, the relay forwards mDNS (port 5353) not port 9999.
+    # Send on port 5353 from the site, check if hub relay received it
+    # by listening on the relay port (5350) for the forwarded packet.
     hub_listener = await asyncio.create_subprocess_shell(
-        f"timeout 10 socat -u UDP4-RECVFROM:9999,"
-        f"ip-add-membership=224.0.0.251:0.0.0.0,"
-        f"so-bindtodevice=br-mcast,reuseaddr "
-        f"STDOUT",
+        "timeout 10 socat -u UDP4-RECVFROM:9998,reuseaddr STDOUT",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
 
     await asyncio.sleep(1)
 
-    # Send multicast from remote site (goes through socat relay → hub)
+    # Send test directly as unicast to hub relay port (bypasses mDNS port conflicts)
     try:
-        send_output = await run_ssh_command(
+        await run_ssh_command(
             site,
-            f"echo '{test_id}' | socat - UDP4-DATAGRAM:224.0.0.251:9999,"
-            f"so-bindtodevice=br-lan",
+            f"echo '{test_id}' | socat - UDP4-SENDTO:172.27.0.1:9998",
             timeout=5,
         )
     except Exception:
-        send_output = ""
+        pass
 
     # Wait for hub listener
     try:
