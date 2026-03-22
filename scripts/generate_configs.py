@@ -162,9 +162,9 @@ def generate_hub_bridge_script(hub_tunnel_ip: str, sites: list[dict], mcast_nic:
         lines.extend([
             f"# {site['name']}",
             f"ip link add {iface} type gretap local {hub_tunnel_ip} remote {site['tunnel_ip']} 2>/dev/null || true",
-            f"ip link set {iface} mtu 1380",
+            f"ip link set {iface} mtu 1380 2>/dev/null || true",
             f"ip link set {iface} master br-mcast 2>/dev/null || true",
-            f"ip link set {iface} up",
+            f"ip link set {iface} up 2>/dev/null || true",
             "",
         ])
     lines.append('echo "Hub bridge setup complete."')
