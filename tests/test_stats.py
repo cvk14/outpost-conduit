@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from web.stats import merge_stats, parse_bridge_stats, parse_wg_dump
+from web.stats import merge_stats, parse_bridge_stats, parse_ip_link_stats, parse_wg_dump
 
 # ---------------------------------------------------------------------------
 # Real command output fixtures
@@ -17,20 +17,22 @@ WG_DUMP = (
     "\t172.27.1.1/32\t1711900000\t142300000\t89700000\t25"
 )
 
-# Real output from `bridge -s link show br-mcast`
+# Real output from `bridge link show br-mcast` (no -s, stats come from ip -s link)
 BRIDGE_STATS = (
     "3: ens19: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 master br-mcast"
     " state forwarding priority 32 cost 100\n"
-    "    RX:  bytes packets errors\n"
-    "    890000000 1200000 0\n"
-    "    TX:  bytes packets errors\n"
-    "    1200000000 1500000 0\n"
-    "9: gretap-test-sit@NONE: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1380"
-    " master br-mcast state forwarding priority 32 cost 100\n"
-    "    RX:  bytes packets errors\n"
-    "    89700000 120000 0\n"
-    "    TX:  bytes packets errors\n"
-    "    142300000 150000 0"
+    "16: gretap-test-sit@NONE: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1380"
+    " master br-mcast state forwarding priority 32 cost 100"
+)
+
+# Real output from `ip -s link show ens19`
+IP_LINK_STATS = (
+    "3: ens19: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel master br-mcast state UP\n"
+    "    link/ether bc:24:11:26:44:5d brd ff:ff:ff:ff:ff:ff\n"
+    "    RX:  bytes packets errors dropped  missed   mcast\n"
+    "    890000000 1200000 0       0       0       0\n"
+    "    TX:  bytes packets errors dropped carrier collsns\n"
+    "    1200000000 1500000 0      0       0       0"
 )
 
 
@@ -71,17 +73,30 @@ class TestParseBridgeStats:
     def test_parses_ports(self):
         ports = parse_bridge_stats(BRIDGE_STATS)
         assert len(ports) == 2
-        ens19 = ports[0]
-        assert ens19["name"] == "ens19"
-        assert ens19["state"] == "forwarding"
-        assert ens19["rx_bytes"] == 890000000
-        assert ens19["tx_bytes"] == 1200000000
+        assert ports[0]["name"] == "ens19"
+        assert ports[0]["state"] == "forwarding"
 
     def test_parses_gretap_port(self):
         ports = parse_bridge_stats(BRIDGE_STATS)
         gretap = ports[1]
-        assert gretap["rx_bytes"] == 89700000
-        assert gretap["tx_packets"] == 150000
+        assert gretap["name"] == "gretap-test-sit"
+        assert gretap["state"] == "forwarding"
+
+
+class TestParseIpLinkStats:
+    """Tests for parse_ip_link_stats()."""
+
+    def test_parses_rx_tx(self):
+        stats = parse_ip_link_stats(IP_LINK_STATS)
+        assert stats["rx_bytes"] == 890000000
+        assert stats["rx_packets"] == 1200000
+        assert stats["tx_bytes"] == 1200000000
+        assert stats["tx_packets"] == 1500000
+
+    def test_empty_output(self):
+        stats = parse_ip_link_stats("")
+        assert stats["rx_bytes"] == 0
+        assert stats["tx_bytes"] == 0
 
 
 # ---------------------------------------------------------------------------

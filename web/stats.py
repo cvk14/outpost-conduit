@@ -59,59 +59,67 @@ def parse_wg_dump(output: str) -> list[dict]:
 
 
 def parse_bridge_stats(output: str) -> list[dict]:
-    """Parse output of ``bridge -s link show <bridge>``.
+    """Parse output of ``bridge link show <bridge>`` (port names + state).
 
-    Each port block starts with a header line matching::
+    Each port line matches::
 
         N: name(@suffix)?: <FLAGS> ... state STATE ...
 
-    Followed by RX header, RX values, TX header, TX values — each on its own
-    line with leading whitespace.
+    Traffic stats are NOT reliably available from ``bridge -s`` across kernel
+    versions.  Use ``parse_ip_link_stats()`` separately for traffic data.
 
     Returns:
-        List of port dicts with keys: name, state, rx_bytes, rx_packets,
-        rx_errors, tx_bytes, tx_packets, tx_errors.
+        List of port dicts with keys: name, state, and zeroed traffic fields.
     """
     ports: list[dict] = []
-    lines = output.strip().splitlines()
-    i = 0
-    # Pattern for a port header line.
     header_re = re.compile(
         r"^\d+:\s+(\S+?)(?:@\S+)?:\s+<[^>]*>.*\bstate\s+(\S+)"
     )
 
-    while i < len(lines):
-        m = header_re.match(lines[i])
+    for line in output.strip().splitlines():
+        m = header_re.match(line)
         if m:
-            name = m.group(1)
-            state = m.group(2)
-            # Next 4 lines: RX header, RX values, TX header, TX values.
-            rx_vals = _parse_stat_values(lines, i + 2)
-            tx_vals = _parse_stat_values(lines, i + 4)
             ports.append({
-                "name": name,
-                "state": state,
-                "rx_bytes": rx_vals[0],
-                "rx_packets": rx_vals[1],
-                "rx_errors": rx_vals[2],
-                "tx_bytes": tx_vals[0],
-                "tx_packets": tx_vals[1],
-                "tx_errors": tx_vals[2],
+                "name": m.group(1),
+                "state": m.group(2),
+                "rx_bytes": 0, "rx_packets": 0, "rx_errors": 0,
+                "tx_bytes": 0, "tx_packets": 0, "tx_errors": 0,
             })
-            i += 5  # Skip past this block.
-        else:
-            i += 1
     return ports
 
 
-def _parse_stat_values(lines: list[str], index: int) -> tuple[int, int, int]:
-    """Extract (bytes, packets, errors) from a bridge stats values line."""
-    if index >= len(lines):
-        return (0, 0, 0)
-    parts = lines[index].split()
-    if len(parts) >= 3:
-        return (int(parts[0]), int(parts[1]), int(parts[2]))
-    return (0, 0, 0)
+def parse_ip_link_stats(output: str) -> dict:
+    """Parse output of ``ip -s link show <iface>``.
+
+    Extracts RX/TX bytes, packets, errors from the stats lines.
+
+    Returns:
+        Dict with rx_bytes, rx_packets, rx_errors, tx_bytes, tx_packets, tx_errors.
+    """
+    result = {
+        "rx_bytes": 0, "rx_packets": 0, "rx_errors": 0,
+        "tx_bytes": 0, "tx_packets": 0, "tx_errors": 0,
+    }
+    lines = output.strip().splitlines()
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("RX:") and i + 1 < len(lines):
+            vals = lines[i + 1].split()
+            if vals:
+                result["rx_bytes"] = int(vals[0])
+            if len(vals) >= 2:
+                result["rx_packets"] = int(vals[1])
+            if len(vals) >= 3:
+                result["rx_errors"] = int(vals[2])
+        elif stripped.startswith("TX:") and i + 1 < len(lines):
+            vals = lines[i + 1].split()
+            if vals:
+                result["tx_bytes"] = int(vals[0])
+            if len(vals) >= 2:
+                result["tx_packets"] = int(vals[1])
+            if len(vals) >= 3:
+                result["tx_errors"] = int(vals[2])
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -247,11 +255,22 @@ class StatsCollector:
                     f"wg show {self.wg_interface} dump"
                 )
                 bridge_output = await self._run_cmd(
-                    f"bridge -s link show {self.bridge_name}"
+                    f"bridge link show {self.bridge_name}"
                 )
 
                 peers = parse_wg_dump(wg_output)
                 bridge_ports = parse_bridge_stats(bridge_output)
+
+                # Fetch per-port traffic stats via ip -s link
+                for port in bridge_ports:
+                    try:
+                        port_stats_output = await self._run_cmd(
+                            f"ip -s link show {port['name']}"
+                        )
+                        stats = parse_ip_link_stats(port_stats_output)
+                        port.update(stats)
+                    except Exception:
+                        pass
 
                 sites = self.get_sites()
                 self._attach_keys(sites)
