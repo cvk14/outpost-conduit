@@ -55,7 +55,8 @@ All data comes from local shell commands on the hub VM — no external APIs:
 - `POST /api/hub/regenerate` — regenerate all configs + restart hub WireGuard and bridge services
 
 **Remote management (SSH):**
-- `POST /api/sites/{name}/deploy` — SCP configs + run setup script on remote device
+- `POST /api/sites/{name}/push` — SCP generated config files to the remote device (does not run setup)
+- `POST /api/sites/{name}/setup` — run the full setup script on remote device (`glinet-setup.sh` or `pi-setup.sh`). For cradlepoint sites, uses the Pi command set.
 - `POST /api/sites/{name}/restart` — restart WireGuard + GRETAP on remote device
 - `POST /api/sites/{name}/status` — check WireGuard/GRETAP/bridge status on remote device
 - `POST /api/sites/{name}/reboot` — reboot remote device
