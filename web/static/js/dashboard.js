@@ -418,42 +418,90 @@ window.DashboardView = {
         var log = document.getElementById('dashCaptureLog');
         if (!log) return;
 
-        var line = document.createElement('div');
-        line.style.cssText = 'display:flex;gap:0.75rem;white-space:nowrap';
+        var entry = document.createElement('div');
+        entry.style.cssText = 'border-bottom:1px solid #1e2130;padding:3px 0';
 
-        // Timestamp
+        // Line 1: timestamp, protocol, flow, size
+        var line1 = document.createElement('div');
+        line1.style.cssText = 'display:flex;gap:0.75rem;white-space:nowrap';
+
         var ts = document.createElement('span');
         ts.style.color = '#64748b';
         ts.textContent = pkt.timestamp || '';
-        line.appendChild(ts);
+        line1.appendChild(ts);
 
-        // Protocol badge
         var proto = document.createElement('span');
-        proto.style.cssText = 'min-width:50px';
+        proto.style.cssText = 'min-width:50px;font-weight:600';
         var pcolor = pkt.protocol === 'mDNS' ? '#22c55e' : pkt.protocol === 'SSDP' ? '#eab308' : pkt.protocol === 'Relay' ? '#a78bfa' : '#60a5fa';
         proto.style.color = pcolor;
-        proto.textContent = pkt.protocol || 'UDP';
-        line.appendChild(proto);
+        var qtype = pkt.query_type === 'query' ? ' Q' : pkt.query_type === 'response' ? ' R' : '';
+        proto.textContent = (pkt.protocol || 'UDP') + qtype;
+        line1.appendChild(proto);
 
-        // Source → Dest
         var flow = document.createElement('span');
         flow.style.color = '#e0e0e0';
-        var srcIp = pkt.src_ip || '?';
-        var dstIp = pkt.dst_ip || '?';
-        var srcPort = pkt.src_port || '';
-        var dstPort = pkt.dst_port || '';
-        flow.textContent = srcIp + ':' + srcPort + ' \u2192 ' + dstIp + ':' + dstPort;
-        line.appendChild(flow);
+        flow.textContent = (pkt.src_ip || '?') + ' \u2192 ' + (pkt.dst_ip || '?');
+        line1.appendChild(flow);
 
-        // Size
+        if (pkt.src_mac) {
+          var mac = document.createElement('span');
+          mac.style.color = '#475569';
+          mac.textContent = pkt.src_mac;
+          line1.appendChild(mac);
+        }
+
         if (pkt.length) {
           var sz = document.createElement('span');
           sz.style.color = '#64748b';
           sz.textContent = pkt.length + 'B';
-          line.appendChild(sz);
+          line1.appendChild(sz);
         }
 
-        log.appendChild(line);
+        entry.appendChild(line1);
+
+        // Line 2: mDNS details (services, hostnames, device info, txt records)
+        var details = [];
+
+        if (pkt.hostnames && pkt.hostnames.length) {
+          details.push('\ud83c\udff7\ufe0f ' + pkt.hostnames.join(', '));
+        }
+        if (pkt.device_info) {
+          details.push('\ud83d\udcf1 ' + pkt.device_info);
+        }
+        if (pkt.services && pkt.services.length) {
+          details.push('\ud83d\udd0c ' + pkt.services.join(', '));
+        }
+        if (pkt.addresses && pkt.addresses.length) {
+          details.push('IP: ' + pkt.addresses.join(', '));
+        }
+        if (pkt.srvs && pkt.srvs.length) {
+          details.push('SRV: ' + pkt.srvs.map(function(s) { return s.host + ':' + s.port; }).join(', '));
+        }
+        if (pkt.ptrs && pkt.ptrs.length) {
+          // Show PTR records but truncate if too many
+          var ptrList = pkt.ptrs.slice(0, 4).join(', ');
+          if (pkt.ptrs.length > 4) ptrList += ' +' + (pkt.ptrs.length - 4) + ' more';
+          details.push('PTR: ' + ptrList);
+        }
+        if (pkt.txt && pkt.txt.length) {
+          // Show interesting TXT key=value pairs (filter noise)
+          var interesting = pkt.txt.filter(function(t) {
+            var k = t.split('=')[0].toLowerCase();
+            return ['manufacturer', 'model', 'md', 'serialnumber', 'deviceid', 'name', 'id', 'fn'].indexOf(k) >= 0;
+          });
+          if (interesting.length) {
+            details.push('TXT: ' + interesting.join(', '));
+          }
+        }
+
+        if (details.length > 0) {
+          var line2 = document.createElement('div');
+          line2.style.cssText = 'padding-left:4rem;color:#94a3b8;font-size:10px;white-space:normal;word-break:break-all';
+          line2.textContent = details.join('  |  ');
+          entry.appendChild(line2);
+        }
+
+        log.appendChild(entry);
 
         // Auto-scroll and limit to 200 lines
         log.scrollTop = log.scrollHeight;
