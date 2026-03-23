@@ -136,11 +136,17 @@ app.include_router(passkey_auth_router)
 async def index():
     """Serve the main application page."""
     html_path = WEB_DIR / "templates" / "index.html"
-    return HTMLResponse(content=html_path.read_text())
+    return HTMLResponse(
+        content=html_path.read_text(),
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
 
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page():
     """Serve the login page."""
     html_path = WEB_DIR / "templates" / "login.html"
-    return HTMLResponse(content=html_path.read_text())
+    return HTMLResponse(
+        content=html_path.read_text(),
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
