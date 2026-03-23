@@ -8,6 +8,19 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from web.auth import decode_token
 from web.app import get_settings
 
+import json
+import time
+from pathlib import Path
+from fastapi import APIRouter, Depends
+from web.app import require_auth
+
+RADIO_LOG_PATH = Path(__file__).parent.parent.parent / "radio_log.json"
+
+RADIO_KEYWORDS = re.compile(
+    r"motorola|apx\d|astro|mototrbo|xcmp|xnl|p25|issi|cssi|dfsi",
+    re.IGNORECASE,
+)
+
 router = APIRouter(tags=["capture"])
 
 
@@ -54,6 +67,10 @@ async def ws_multicast_capture(ws: WebSocket, token: str = Query(...)):
                 # New packet — flush previous buffer
                 if buffer:
                     packet = _parse_packet(buffer)
+                    # Log radio traffic server-side
+                    if _is_radio_packet(packet):
+                        packet["is_radio"] = True
+                        _append_radio_log(packet)
                     await ws.send_json(packet)
                 buffer = [text]
             else:
@@ -176,3 +193,63 @@ def _parse_packet(lines: list) -> dict:
         result["query_type"] = "response"
 
     return result
+
+
+def _is_radio_packet(pkt: dict) -> bool:
+    """Check if a packet looks like it's from a Motorola/APX radio."""
+    raw = pkt.get("raw", "")
+    if RADIO_KEYWORDS.search(raw):
+        return True
+    for field in ["device_info", "hostnames", "services", "ptrs", "txt"]:
+        val = pkt.get(field)
+        if val:
+            text = str(val) if not isinstance(val, list) else " ".join(str(v) for v in val)
+            if RADIO_KEYWORDS.search(text):
+                return True
+    return False
+
+
+def _append_radio_log(pkt: dict) -> None:
+    """Append a radio packet to the persistent log file."""
+    entry = {
+        "timestamp": pkt.get("timestamp", ""),
+        "logged_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "src_ip": pkt.get("src_ip", ""),
+        "dst_ip": pkt.get("dst_ip", ""),
+        "src_mac": pkt.get("src_mac", ""),
+        "protocol": pkt.get("protocol", ""),
+        "services": pkt.get("services"),
+        "hostnames": pkt.get("hostnames"),
+        "device_info": pkt.get("device_info"),
+        "ptrs": pkt.get("ptrs"),
+        "txt": pkt.get("txt"),
+        "addresses": pkt.get("addresses"),
+        "length": pkt.get("length"),
+    }
+    try:
+        existing = []
+        if RADIO_LOG_PATH.is_file():
+            existing = json.loads(RADIO_LOG_PATH.read_text())
+        existing.append(entry)
+        # Keep last 500 entries
+        if len(existing) > 500:
+            existing = existing[-500:]
+        RADIO_LOG_PATH.write_text(json.dumps(existing, indent=2))
+    except Exception:
+        pass
+
+
+@router.get("/api/radio-log", dependencies=[Depends(require_auth)])
+async def get_radio_log():
+    """Return the persistent radio traffic log."""
+    if RADIO_LOG_PATH.is_file():
+        return json.loads(RADIO_LOG_PATH.read_text())
+    return []
+
+
+@router.delete("/api/radio-log", dependencies=[Depends(require_auth)])
+async def clear_radio_log():
+    """Clear the radio traffic log."""
+    if RADIO_LOG_PATH.is_file():
+        RADIO_LOG_PATH.write_text("[]")
+    return {"status": "ok"}

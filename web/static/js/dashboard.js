@@ -173,6 +173,18 @@ window.DashboardView = {
     // --- Health status panel ---
     html += this._renderHealth(sites);
 
+    // --- Radio log panel ---
+    html += '<div class="panel" style="margin-top:1.5rem">';
+    html += '<div class="panel-header">';
+    html += '<span class="panel-title">\ud83d\udce1 Radio Traffic Log</span>';
+    html += '<div class="flex items-center gap-sm">';
+    html += '<button class="btn btn-ghost btn-sm" id="dashRadioRefresh">Refresh</button>';
+    html += '<button class="btn btn-ghost btn-sm" id="dashRadioClear">Clear Log</button>';
+    html += '</div>';
+    html += '</div>';
+    html += '<div id="dashRadioLog" style="padding:1rem;color:#94a3b8;font-size:0.85rem">Loading...</div>';
+    html += '</div>';
+
     // --- Live multicast capture ---
     html += '<div class="panel" style="margin-top:1.5rem">';
     html += '<div class="panel-header">';
@@ -192,8 +204,9 @@ window.DashboardView = {
 
     container.innerHTML = html;
 
-    // Load existing health data
+    // Load existing health data and radio log
     this._loadHealth();
+    this._loadRadioLog();
 
     // Bind capture buttons
     this._capturePacketCount = 0;
@@ -215,6 +228,17 @@ window.DashboardView = {
     var exportBtn = document.getElementById('dashCaptureExport');
     if (exportBtn) {
       exportBtn.addEventListener('click', () => this._exportCapture());
+    }
+    var radioRefresh = document.getElementById('dashRadioRefresh');
+    if (radioRefresh) {
+      radioRefresh.addEventListener('click', () => this._loadRadioLog());
+    }
+    var radioClear = document.getElementById('dashRadioClear');
+    if (radioClear) {
+      radioClear.addEventListener('click', async () => {
+        await Api.del('/api/radio-log');
+        this._loadRadioLog();
+      });
     }
     var clearBtn = document.getElementById('dashCaptureClear');
     if (clearBtn) {
@@ -394,6 +418,84 @@ window.DashboardView = {
       alert('Restart successful:\n' + (result.output || result.message || 'OK'));
     } catch (err) {
       alert('Restart failed: ' + err.message);
+    }
+  },
+
+  async _loadRadioLog() {
+    var container = document.getElementById('dashRadioLog');
+    if (!container) return;
+
+    try {
+      var entries = await Api.get('/api/radio-log');
+      if (!entries || entries.length === 0) {
+        container.textContent = 'No radio traffic detected yet. Start a capture to begin monitoring.';
+        return;
+      }
+
+      container.textContent = '';
+      var table = document.createElement('table');
+      table.style.width = '100%';
+      var thead = document.createElement('thead');
+      var hRow = document.createElement('tr');
+      ['Time', 'Source IP', 'MAC', 'Device', 'Services', 'Hostnames'].forEach(function(h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        hRow.appendChild(th);
+      });
+      thead.appendChild(hRow);
+      table.appendChild(thead);
+
+      var tbody = document.createElement('tbody');
+      // Show newest first
+      for (var i = entries.length - 1; i >= Math.max(0, entries.length - 50); i--) {
+        var e = entries[i];
+        var tr = document.createElement('tr');
+        tr.style.background = '#22c55e08';
+
+        var tdTime = document.createElement('td');
+        tdTime.className = 'font-mono text-sm';
+        tdTime.textContent = e.logged_at || e.timestamp || '';
+        tr.appendChild(tdTime);
+
+        var tdSrc = document.createElement('td');
+        tdSrc.className = 'font-mono text-sm';
+        tdSrc.textContent = e.src_ip || '';
+        tr.appendChild(tdSrc);
+
+        var tdMac = document.createElement('td');
+        tdMac.className = 'font-mono text-sm text-muted';
+        tdMac.textContent = e.src_mac || '';
+        tr.appendChild(tdMac);
+
+        var tdDevice = document.createElement('td');
+        tdDevice.className = 'text-sm';
+        tdDevice.style.color = '#22c55e';
+        tdDevice.textContent = e.device_info || '';
+        tr.appendChild(tdDevice);
+
+        var tdSvc = document.createElement('td');
+        tdSvc.className = 'text-sm text-secondary';
+        tdSvc.textContent = (e.services || []).join(', ');
+        tr.appendChild(tdSvc);
+
+        var tdHost = document.createElement('td');
+        tdHost.className = 'text-sm';
+        tdHost.textContent = (e.hostnames || []).join(', ');
+        tr.appendChild(tdHost);
+
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody);
+      container.appendChild(table);
+
+      var count = document.createElement('p');
+      count.className = 'text-muted text-xs';
+      count.style.marginTop = '0.5rem';
+      count.textContent = entries.length + ' total entries (showing last 50)';
+      container.appendChild(count);
+
+    } catch (err) {
+      container.textContent = 'Failed to load radio log: ' + err.message;
     }
   },
 
