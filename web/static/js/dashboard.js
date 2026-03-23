@@ -364,11 +364,15 @@ window.DashboardView = {
       cards += '<span class="bridge-card-name font-mono" style="color:#60a5fa">' + Utils.escapeHtml(name) + '</span>';
       cards += '<span class="badge ' + overallBadge + '">' + overallText + '</span>';
       cards += '</div>';
-      cards += '<div class="bridge-card-detail" style="display:flex;gap:1rem;flex-wrap:wrap">';
+      cards += '<div class="bridge-card-detail" style="display:flex;flex-direction:column;gap:0.25rem">';
+      cards += '<div style="display:flex;gap:1rem">';
+      cards += '<span class="text-sm">Mcast Hub\u2192Site: <strong style="color:' + (mcastOutOk ? '#22c55e' : '#ef4444') + '">' + (mcastOutOk ? 'OK' : 'FAIL') + '</strong></span>';
+      cards += '<span class="text-sm">Mcast Site\u2192Hub: <strong style="color:' + (mcastInOk ? '#22c55e' : '#ef4444') + '">' + (mcastInOk ? 'OK' : 'FAIL') + '</strong></span>';
+      cards += '</div>';
+      cards += '<div style="display:flex;gap:1rem">';
       cards += '<span class="text-sm">Ping: <strong style="color:' + (pingOk ? '#22c55e' : '#ef4444') + '">' + latency + '</strong> (' + loss + ' loss)</span>';
-      cards += '<span class="text-sm">Mcast \u2192: <strong style="color:' + (mcastOutOk ? '#22c55e' : '#ef4444') + '">' + (mcastOutOk ? 'OK' : 'FAIL') + '</strong></span>';
-      cards += '<span class="text-sm">Mcast \u2190: <strong style="color:' + (mcastInOk ? '#22c55e' : '#ef4444') + '">' + (mcastInOk ? 'OK' : 'FAIL') + '</strong></span>';
       if (age) cards += '<span class="text-muted text-xs">' + age + '</span>';
+      cards += '</div>';
       cards += '</div>';
       cards += '</div>';
     }
