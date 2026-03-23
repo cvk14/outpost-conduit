@@ -26,8 +26,9 @@ window.DashboardView = {
     }
 
     // Listen for live updates — but don't re-render while capture is active
+    // or if capture data is still on screen
     this._listener = (e) => {
-      if (this._captureWs) return; // Don't re-render during capture
+      if (this._captureWs || this._captureHasData) return;
       this._renderData(container, e.detail);
     };
     window.addEventListener('stats-update', this._listener);
@@ -213,6 +214,7 @@ window.DashboardView = {
     this._capturePacketCount = 0;
     this._captureWs = null;
     this._capturePaused = false;
+    this._captureHasData = false;
     this._captureData = [];
     var toggleBtn = document.getElementById('dashCaptureToggle');
     if (toggleBtn) {
@@ -245,6 +247,7 @@ window.DashboardView = {
         if (log) log.textContent = '';
         this._capturePacketCount = 0;
         this._captureData = [];
+        this._captureHasData = false;
         var cnt = document.getElementById('dashCaptureCount');
         if (cnt) cnt.textContent = '0 packets';
       });
@@ -583,6 +586,7 @@ window.DashboardView = {
 
         // Store for export
         self._captureData.push(pkt);
+        self._captureHasData = true;
         if (self._captureData.length > 1000) self._captureData.shift();
 
         // Skip rendering if paused
