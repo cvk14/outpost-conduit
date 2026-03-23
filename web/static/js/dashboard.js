@@ -179,11 +179,13 @@ window.DashboardView = {
     html += '<span class="panel-title">Live Multicast Traffic</span>';
     html += '<div class="flex items-center gap-sm">';
     html += '<button class="btn btn-primary btn-sm" id="dashCaptureToggle">Start Capture</button>';
+    html += '<button class="btn btn-ghost btn-sm" id="dashCapturePause" style="display:none">Pause</button>';
+    html += '<button class="btn btn-ghost btn-sm" id="dashCaptureExport">Export .md</button>';
     html += '<button class="btn btn-ghost btn-sm" id="dashCaptureClear">Clear</button>';
     html += '<span class="text-muted text-xs" id="dashCaptureCount">0 packets</span>';
     html += '</div>';
     html += '</div>';
-    html += '<div id="dashCaptureLog" class="log-output" style="max-height:300px;font-size:11px;min-height:80px"></div>';
+    html += '<div id="dashCaptureLog" class="log-output" style="max-height:1200px;font-size:11px;min-height:300px"></div>';
     html += '</div>';
 
     html += '</div>'; // .container
@@ -196,9 +198,23 @@ window.DashboardView = {
     // Bind capture buttons
     this._capturePacketCount = 0;
     this._captureWs = null;
+    this._capturePaused = false;
+    this._captureData = [];
     var toggleBtn = document.getElementById('dashCaptureToggle');
     if (toggleBtn) {
       toggleBtn.addEventListener('click', () => this._toggleCapture());
+    }
+    var pauseBtn = document.getElementById('dashCapturePause');
+    if (pauseBtn) {
+      pauseBtn.addEventListener('click', () => {
+        this._capturePaused = !this._capturePaused;
+        pauseBtn.textContent = this._capturePaused ? 'Resume' : 'Pause';
+        pauseBtn.className = this._capturePaused ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm';
+      });
+    }
+    var exportBtn = document.getElementById('dashCaptureExport');
+    if (exportBtn) {
+      exportBtn.addEventListener('click', () => this._exportCapture());
     }
     var clearBtn = document.getElementById('dashCaptureClear');
     if (clearBtn) {
@@ -206,6 +222,7 @@ window.DashboardView = {
         var log = document.getElementById('dashCaptureLog');
         if (log) log.textContent = '';
         this._capturePacketCount = 0;
+        this._captureData = [];
         var cnt = document.getElementById('dashCaptureCount');
         if (cnt) cnt.textContent = '0 packets';
       });
@@ -382,14 +399,16 @@ window.DashboardView = {
 
   _toggleCapture() {
     var btn = document.getElementById('dashCaptureToggle');
+    var pauseBtn = document.getElementById('dashCapturePause');
     if (this._captureWs) {
       // Stop capture
-      this._captureWs.close();
+      try { this._captureWs.close(); } catch(e) {}
       this._captureWs = null;
       if (btn) {
         btn.textContent = 'Start Capture';
         btn.className = 'btn btn-primary btn-sm';
       }
+      if (pauseBtn) pauseBtn.style.display = 'none';
       return;
     }
 
@@ -397,6 +416,11 @@ window.DashboardView = {
     if (btn) {
       btn.textContent = 'Stop Capture';
       btn.className = 'btn btn-danger btn-sm';
+    }
+    if (pauseBtn) {
+      pauseBtn.style.display = '';
+      pauseBtn.textContent = 'Pause';
+      this._capturePaused = false;
     }
 
     var proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -411,6 +435,13 @@ window.DashboardView = {
         if (pkt.type === 'keepalive') return;
         if (pkt.type !== 'packet') return;
 
+        // Store for export
+        self._captureData.push(pkt);
+        if (self._captureData.length > 1000) self._captureData.shift();
+
+        // Skip rendering if paused
+        if (self._capturePaused) return;
+
         self._capturePacketCount++;
         var cnt = document.getElementById('dashCaptureCount');
         if (cnt) cnt.textContent = self._capturePacketCount + ' packets';
@@ -418,8 +449,14 @@ window.DashboardView = {
         var log = document.getElementById('dashCaptureLog');
         if (!log) return;
 
+        // Detect if this packet might be from a Motorola/APX radio
+        var isRadio = self._detectRadio(pkt);
+
         var entry = document.createElement('div');
         entry.style.cssText = 'border-bottom:1px solid #1e2130;padding:3px 0';
+        if (isRadio) {
+          entry.style.cssText += ';background:#22c55e11;border-left:3px solid #22c55e;padding-left:8px';
+        }
 
         // Line 1: timestamp, protocol, flow, size
         var line1 = document.createElement('div');
@@ -455,6 +492,13 @@ window.DashboardView = {
           sz.style.color = '#64748b';
           sz.textContent = pkt.length + 'B';
           line1.appendChild(sz);
+        }
+
+        if (isRadio) {
+          var badge = document.createElement('span');
+          badge.style.cssText = 'background:#22c55e33;color:#22c55e;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:700';
+          badge.textContent = '\ud83d\udce1 RADIO';
+          line1.appendChild(badge);
         }
 
         entry.appendChild(line1);
@@ -520,6 +564,107 @@ window.DashboardView = {
         btn.className = 'btn btn-primary btn-sm';
       }
     };
+  },
+
+  _exportCapture() {
+    var data = this._captureData || [];
+    if (data.length === 0) {
+      alert('No capture data to export.');
+      return;
+    }
+
+    var lines = [];
+    lines.push('# Outpost Conduit — Multicast Capture');
+    lines.push('');
+    lines.push('**Exported:** ' + new Date().toISOString());
+    lines.push('**Packets:** ' + data.length);
+    lines.push('');
+    lines.push('---');
+    lines.push('');
+
+    // Summary — count by protocol
+    var protoCounts = {};
+    var radioPkts = [];
+    for (var i = 0; i < data.length; i++) {
+      var p = data[i];
+      var proto = p.protocol || 'unknown';
+      protoCounts[proto] = (protoCounts[proto] || 0) + 1;
+      if (this._detectRadio(p)) radioPkts.push(p);
+    }
+
+    lines.push('## Summary');
+    lines.push('');
+    lines.push('| Protocol | Count |');
+    lines.push('|---|---|');
+    for (var proto in protoCounts) {
+      lines.push('| ' + proto + ' | ' + protoCounts[proto] + ' |');
+    }
+    lines.push('');
+
+    if (radioPkts.length > 0) {
+      lines.push('## Radio Traffic Detected (' + radioPkts.length + ' packets)');
+      lines.push('');
+      for (var r = 0; r < radioPkts.length; r++) {
+        var rp = radioPkts[r];
+        lines.push('- **' + (rp.timestamp || '') + '** ' + (rp.src_ip || '?') + ' → ' + (rp.dst_ip || '?'));
+        if (rp.hostnames) lines.push('  - Hostnames: ' + rp.hostnames.join(', '));
+        if (rp.device_info) lines.push('  - Device: ' + rp.device_info);
+        if (rp.services) lines.push('  - Services: ' + rp.services.join(', '));
+        if (rp.txt) lines.push('  - TXT: ' + rp.txt.join(', '));
+      }
+      lines.push('');
+    }
+
+    lines.push('## All Packets');
+    lines.push('');
+    lines.push('| # | Time | Proto | Source | Dest | Size | Details |');
+    lines.push('|---|---|---|---|---|---|---|');
+    for (var j = 0; j < data.length; j++) {
+      var pk = data[j];
+      var isR = this._detectRadio(pk) ? ' **RADIO**' : '';
+      var details = [];
+      if (pk.hostnames) details.push(pk.hostnames.join(', '));
+      if (pk.services) details.push(pk.services.join(', '));
+      if (pk.device_info) details.push(pk.device_info);
+      lines.push('| ' + (j + 1) + ' | ' + (pk.timestamp || '') + ' | ' + (pk.protocol || '') + ' | ' + (pk.src_ip || '?') + ' | ' + (pk.dst_ip || '?') + ' | ' + (pk.length || '') + ' | ' + details.join('; ') + isR + ' |');
+    }
+
+    var md = lines.join('\n');
+    var blob = new Blob([md], {type: 'text/markdown'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'multicast-capture-' + new Date().toISOString().slice(0, 19).replace(/:/g, '') + '.md';
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+
+  _detectRadio(pkt) {
+    // Look for Motorola/APX radio indicators in the packet data
+    var raw = (pkt.raw || '').toLowerCase();
+    var checks = [
+      // Manufacturer/model identifiers
+      pkt.device_info && /motorola|apx|astro|mototrbo/i.test(pkt.device_info),
+      // Service names specific to Motorola radio management
+      pkt.services && pkt.services.some(function(s) {
+        return /motorola|moto|apx|astro|trbo|p25|issi|cssi|dfsi|xcmp|xnl/i.test(s);
+      }),
+      // Hostnames
+      pkt.hostnames && pkt.hostnames.some(function(h) {
+        return /motorola|apx|astro|trbo|moto/i.test(h);
+      }),
+      // PTR records
+      pkt.ptrs && pkt.ptrs.some(function(p) {
+        return /motorola|apx|astro|trbo|moto|xcmp|xnl/i.test(p);
+      }),
+      // TXT records mentioning Motorola
+      pkt.txt && pkt.txt.some(function(t) {
+        return /motorola|apx|astro|trbo/i.test(t);
+      }),
+      // Raw packet data
+      /motorola|apx\d|astro|mototrbo|xcmp|xnl/i.test(raw),
+    ];
+    return checks.some(function(c) { return c; });
   },
 
   _exportAll() {
