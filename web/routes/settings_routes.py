@@ -76,3 +76,14 @@ async def get_health():
     if monitor:
         return monitor.latest_results
     return {}
+
+
+@router.post("/health/run")
+async def run_health_now():
+    """Trigger health checks on all sites immediately."""
+    from web.app import get_health_monitor
+    monitor = get_health_monitor()
+    if not monitor:
+        return {"error": "Health monitor not running"}
+    results = await monitor.run_now()
+    return results

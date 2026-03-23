@@ -94,9 +94,15 @@ class HealthMonitor:
             self._task.cancel()
             logger.info("HealthMonitor stopped")
 
+    async def run_now(self) -> dict:
+        """Run health checks immediately and return results."""
+        config = load_config()
+        await self._run_checks(config)
+        return self.latest_results
+
     async def _monitor_loop(self) -> None:
-        # Wait 30s on startup before first check
-        await asyncio.sleep(30)
+        # Run first check quickly after startup
+        await asyncio.sleep(10)
 
         while True:
             config = load_config()

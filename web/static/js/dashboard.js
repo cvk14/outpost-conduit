@@ -173,8 +173,14 @@ window.DashboardView = {
 
     container.innerHTML = html;
 
-    // Load health data async
+    // Load existing health data
     this._loadHealth();
+
+    // Bind "Run All Tests Now" button
+    var runBtn = document.getElementById('dashRunHealth');
+    if (runBtn) {
+      runBtn.addEventListener('click', () => this._runHealthNow());
+    }
   },
 
   async _loadHealth() {
@@ -188,12 +194,46 @@ window.DashboardView = {
     }
   },
 
+  async _runHealthNow() {
+    var btn = document.getElementById('dashRunHealth');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Testing all sites...';
+    }
+
+    // Show progress in the health grid
+    var grid = document.getElementById('dashHealthGrid');
+    if (grid) {
+      var progressDiv = document.createElement('div');
+      progressDiv.style.cssText = 'grid-column:1/-1;padding:1rem;color:#94a3b8;text-align:center';
+      progressDiv.textContent = 'Running ping + multicast tests on all sites... this may take a few minutes.';
+      grid.insertBefore(progressDiv, grid.firstChild);
+    }
+
+    try {
+      var health = await Api.post('/api/settings/health/run');
+      if (health && health.sites) {
+        this._renderHealthData(health);
+      }
+    } catch (err) {
+      if (grid) {
+        grid.textContent = 'Health check failed: ' + err.message;
+        grid.style.color = '#ef4444';
+      }
+    }
+
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Run All Tests Now';
+    }
+  },
+
   _renderHealth(sites) {
     let html = '<div class="panel">';
     html += '<div class="panel-header">';
     html += '<span class="panel-title">Health Monitor</span>';
     html += '<div class="flex items-center gap-sm">';
-    html += '<a href="#diagnostics" class="btn btn-ghost btn-sm">Run Manual Test</a>';
+    html += '<button class="btn btn-primary btn-sm" id="dashRunHealth">Run All Tests Now</button>';
     html += '<a href="#settings" class="btn btn-ghost btn-sm">Configure</a>';
     html += '</div>';
     html += '</div>';
