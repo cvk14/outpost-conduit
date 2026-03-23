@@ -49,11 +49,20 @@ def hub_mode(iface, site_ips):
     mcast_sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton("0.0.0.0"))
 
     def relay_from_sites():
-        """Receive unicast from sites, re-broadcast as multicast on bridge."""
+        """Receive unicast from sites, re-broadcast as multicast on bridge AND forward to all other sites."""
         while True:
             try:
                 data, addr = relay_sock.recvfrom(65535)
+                src_ip = addr[0]
+                # Re-broadcast as multicast on the bridge
                 mcast_sock.sendto(data, (MCAST_GROUP, MCAST_PORT))
+                # Also forward to all OTHER sites (site-to-site relay)
+                for site_ip in site_ips:
+                    if site_ip != src_ip:
+                        try:
+                            relay_sock.sendto(data, (site_ip, RELAY_PORT))
+                        except Exception:
+                            pass
             except Exception as e:
                 print(f"[hub] relay_from_sites error: {e}", file=sys.stderr)
 
