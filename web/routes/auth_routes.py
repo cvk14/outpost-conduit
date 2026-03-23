@@ -4,7 +4,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from web.app import get_settings
-from web.auth import verify_password, create_token
+from web.auth import create_token
+from web import users
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -16,16 +17,10 @@ class LoginRequest(BaseModel):
 
 @router.post("/login")
 async def login(body: LoginRequest):
-    """Authenticate a user and return a JWT token.
+    """Authenticate a user with password and return a JWT token."""
+    if not users.verify_password(body.username, body.password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    Returns 401 if username doesn't match or password is incorrect.
-    """
     settings = get_settings()
-    if body.username != settings["admin_user"]:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-    if not verify_password(body.password, settings["admin_password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
     token = create_token(body.username, settings["jwt_secret"])
     return {"token": token}

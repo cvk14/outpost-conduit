@@ -77,6 +77,10 @@ async def lifespan(application: FastAPI):
     _settings["inventory_path"] = os.environ.get("INVENTORY_PATH", "sites.yaml")
     _settings["output_dir"] = os.environ.get("OUTPUT_DIR", "output")
 
+    # Migrate single-user from .env to multi-user system
+    from web.users import migrate_from_env
+    migrate_from_env()
+
     _inventory = InventoryManager(_settings["inventory_path"])
     _collector = StatsCollector(
         output_dir=_settings["output_dir"],
@@ -111,6 +115,7 @@ from web.routes.enroll_routes import router as enroll_router  # noqa: E402
 from web.routes.diagnostics_routes import router as diagnostics_router  # noqa: E402
 from web.routes.settings_routes import router as settings_router  # noqa: E402
 from web.routes.mcast_capture_routes import router as mcast_capture_router  # noqa: E402
+from web.routes.users_routes import router as users_router, auth_router as passkey_auth_router  # noqa: E402
 
 app.include_router(auth_router)
 app.include_router(status_router)
@@ -123,6 +128,8 @@ app.include_router(enroll_router)
 app.include_router(diagnostics_router)
 app.include_router(settings_router)
 app.include_router(mcast_capture_router)
+app.include_router(users_router)
+app.include_router(passkey_auth_router)
 
 
 @app.get("/", response_class=HTMLResponse)

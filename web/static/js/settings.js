@@ -24,13 +24,14 @@ window.SettingsView = {
   async _loadSettings() {
     try {
       var config = await Api.get('/api/settings');
-      this._renderForm(config);
+      var users = await Api.get('/api/users');
+      this._renderForm(config, users);
     } catch (err) {
       this._container.textContent = 'Failed to load settings: ' + err.message;
     }
   },
 
-  _renderForm(config) {
+  _renderForm(config, usersList) {
     var c = this._container;
     c.textContent = '';
 
@@ -117,6 +118,32 @@ window.SettingsView = {
     panel2.appendChild(body2);
     wrapper.appendChild(panel2);
 
+    // --- Users panel ---
+    var panel3 = document.createElement('div');
+    panel3.className = 'panel';
+    panel3.style.marginBottom = '1.5rem';
+
+    var hdr3 = document.createElement('div');
+    hdr3.className = 'panel-header';
+    var t3 = document.createElement('span');
+    t3.className = 'panel-title';
+    t3.textContent = 'User Accounts';
+    hdr3.appendChild(t3);
+    var addUserBtn = document.createElement('button');
+    addUserBtn.className = 'btn btn-primary btn-sm';
+    addUserBtn.textContent = '+ Add User';
+    addUserBtn.id = 'settingsAddUser';
+    hdr3.appendChild(addUserBtn);
+    panel3.appendChild(hdr3);
+
+    var usersBody = document.createElement('div');
+    usersBody.id = 'settingsUsersList';
+    usersBody.style.padding = '1rem';
+    this._renderUsers(usersBody, usersList || []);
+    panel3.appendChild(usersBody);
+
+    wrapper.appendChild(panel3);
+
     // Buttons
     var actions = document.createElement('div');
     actions.className = 'flex gap-sm';
@@ -143,6 +170,7 @@ window.SettingsView = {
 
     c.appendChild(wrapper);
     this._bindEvents();
+    this._bindUserEvents();
   },
 
   _makeField(label, id, type, value, placeholder) {
@@ -220,4 +248,194 @@ window.SettingsView = {
 
     setTimeout(function() { status.textContent = ''; }, 8000);
   },
+
+  // --- User Management ---
+  _renderUsers(container, usersList) {
+    container.textContent = '';
+    if (!usersList || usersList.length === 0) {
+      container.textContent = 'No users configured.';
+      return;
+    }
+
+    var table = document.createElement('table');
+    table.style.width = '100%';
+    var thead = document.createElement('thead');
+    var hRow = document.createElement('tr');
+    ['Username', 'Password', 'Passkeys', 'Created', 'Actions'].forEach(function(h) {
+      var th = document.createElement('th');
+      th.textContent = h;
+      hRow.appendChild(th);
+    });
+    thead.appendChild(hRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    var self = this;
+    for (var i = 0; i < usersList.length; i++) {
+      var u = usersList[i];
+      var tr = document.createElement('tr');
+
+      var tdName = document.createElement('td');
+      tdName.textContent = u.username;
+      tdName.style.fontWeight = '600';
+      tr.appendChild(tdName);
+
+      var tdPw = document.createElement('td');
+      var pwBadge = document.createElement('span');
+      pwBadge.className = 'badge ' + (u.has_password ? 'badge-green' : 'badge-red');
+      pwBadge.textContent = u.has_password ? 'Set' : 'None';
+      tdPw.appendChild(pwBadge);
+      tr.appendChild(tdPw);
+
+      var tdPk = document.createElement('td');
+      tdPk.textContent = u.passkey_count + ' registered';
+      tr.appendChild(tdPk);
+
+      var tdCreated = document.createElement('td');
+      tdCreated.className = 'text-muted text-sm';
+      tdCreated.textContent = u.created || '';
+      tr.appendChild(tdCreated);
+
+      var tdActions = document.createElement('td');
+      var actionsDiv = document.createElement('div');
+      actionsDiv.className = 'flex gap-sm';
+
+      var chPwBtn = document.createElement('button');
+      chPwBtn.className = 'btn btn-ghost btn-sm';
+      chPwBtn.textContent = 'Password';
+      chPwBtn.setAttribute('data-user', u.username);
+      chPwBtn.addEventListener('click', function() {
+        self._changePassword(this.getAttribute('data-user'));
+      });
+      actionsDiv.appendChild(chPwBtn);
+
+      var pkBtn = document.createElement('button');
+      pkBtn.className = 'btn btn-ghost btn-sm';
+      pkBtn.textContent = '+ Passkey';
+      pkBtn.setAttribute('data-user', u.username);
+      pkBtn.addEventListener('click', function() {
+        self._registerPasskey(this.getAttribute('data-user'));
+      });
+      if (!window.PublicKeyCredential) pkBtn.style.display = 'none';
+      actionsDiv.appendChild(pkBtn);
+
+      if (usersList.length > 1) {
+        var delBtn = document.createElement('button');
+        delBtn.className = 'btn btn-ghost btn-sm';
+        delBtn.style.color = '#ef4444';
+        delBtn.textContent = 'Delete';
+        delBtn.setAttribute('data-user', u.username);
+        delBtn.addEventListener('click', function() {
+          self._deleteUser(this.getAttribute('data-user'));
+        });
+        actionsDiv.appendChild(delBtn);
+      }
+
+      tdActions.appendChild(actionsDiv);
+      tr.appendChild(tdActions);
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    container.appendChild(table);
+  },
+
+  _bindUserEvents() {
+    var self = this;
+    var addBtn = document.getElementById('settingsAddUser');
+    if (addBtn) {
+      addBtn.addEventListener('click', function() { self._addUser(); });
+    }
+  },
+
+  async _addUser() {
+    var username = prompt('New username:');
+    if (!username) return;
+    var password = prompt('Password for ' + username + ':');
+    if (!password) return;
+
+    try {
+      await Api.post('/api/users', { username: username, password: password });
+      this._loadSettings();
+    } catch (err) {
+      alert('Failed: ' + err.message);
+    }
+  },
+
+  async _deleteUser(username) {
+    if (!confirm('Delete user "' + username + '"? This cannot be undone.')) return;
+    try {
+      await Api.del('/api/users/' + encodeURIComponent(username));
+      this._loadSettings();
+    } catch (err) {
+      alert('Failed: ' + err.message);
+    }
+  },
+
+  async _changePassword(username) {
+    var newPw = prompt('New password for ' + username + ':');
+    if (!newPw) return;
+    try {
+      await Api.put('/api/users/' + encodeURIComponent(username) + '/password', { password: newPw });
+      alert('Password changed.');
+    } catch (err) {
+      alert('Failed: ' + err.message);
+    }
+  },
+
+  async _registerPasskey(username) {
+    try {
+      // Get registration options
+      var optResp = await Api.post('/api/users/' + encodeURIComponent(username) + '/passkey/register-options');
+
+      // Convert for WebAuthn API
+      optResp.challenge = _b64urlToBuffer(optResp.challenge);
+      optResp.user.id = _b64urlToBuffer(optResp.user.id);
+      if (optResp.excludeCredentials) {
+        optResp.excludeCredentials = optResp.excludeCredentials.map(function(c) {
+          return { ...c, id: _b64urlToBuffer(c.id) };
+        });
+      }
+
+      // Create credential
+      var credential = await navigator.credentials.create({ publicKey: optResp });
+
+      var name = prompt('Name this passkey (e.g., "MacBook Touch ID"):') || 'Passkey';
+
+      // Send to server
+      await Api.post('/api/users/' + encodeURIComponent(username) + '/passkey/register', {
+        credential: {
+          id: credential.id,
+          rawId: _bufferToB64url(credential.rawId),
+          response: {
+            attestationObject: _bufferToB64url(credential.response.attestationObject),
+            clientDataJSON: _bufferToB64url(credential.response.clientDataJSON),
+          },
+          type: credential.type,
+        },
+        name: name,
+      });
+
+      alert('Passkey registered!');
+      this._loadSettings();
+    } catch (err) {
+      if (err.name === 'NotAllowedError') return;
+      alert('Passkey registration failed: ' + err.message);
+    }
+  },
 };
+
+function _b64urlToBuffer(b64url) {
+  var b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
+  var pad = b64.length % 4 === 0 ? '' : '='.repeat(4 - (b64.length % 4));
+  var binary = atob(b64 + pad);
+  var bytes = new Uint8Array(binary.length);
+  for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
+function _bufferToB64url(buffer) {
+  var bytes = new Uint8Array(buffer);
+  var binary = '';
+  for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
