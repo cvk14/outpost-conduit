@@ -25,8 +25,9 @@ window.DashboardView = {
       window.removeEventListener('stats-update', this._listener);
     }
 
-    // Listen for live updates
+    // Listen for live updates — but don't re-render while capture is active
     this._listener = (e) => {
+      if (this._captureWs) return; // Don't re-render during capture
       this._renderData(container, e.detail);
     };
     window.addEventListener('stats-update', this._listener);
@@ -179,7 +180,7 @@ window.DashboardView = {
     html += '<span class="panel-title">\ud83d\udce1 Radio Traffic Log</span>';
     html += '<div class="flex items-center gap-sm">';
     html += '<button class="btn btn-ghost btn-sm" id="dashRadioRefresh">Refresh</button>';
-    html += '<button class="btn btn-ghost btn-sm" id="dashRadioClear">Clear Log</button>';
+    html += '<button class="btn btn-ghost btn-sm" id="dashRadioExport">Export .md</button>';
     html += '</div>';
     html += '</div>';
     html += '<div id="dashRadioLog" style="padding:1rem;color:#94a3b8;font-size:0.85rem">Loading...</div>';
@@ -233,12 +234,9 @@ window.DashboardView = {
     if (radioRefresh) {
       radioRefresh.addEventListener('click', () => this._loadRadioLog());
     }
-    var radioClear = document.getElementById('dashRadioClear');
-    if (radioClear) {
-      radioClear.addEventListener('click', async () => {
-        await Api.del('/api/radio-log');
-        this._loadRadioLog();
-      });
+    var radioExport = document.getElementById('dashRadioExport');
+    if (radioExport) {
+      radioExport.addEventListener('click', () => this._exportRadioLog());
     }
     var clearBtn = document.getElementById('dashCaptureClear');
     if (clearBtn) {
@@ -496,6 +494,52 @@ window.DashboardView = {
 
     } catch (err) {
       container.textContent = 'Failed to load radio log: ' + err.message;
+    }
+  },
+
+  async _exportRadioLog() {
+    try {
+      var entries = await Api.get('/api/radio-log');
+      if (!entries || entries.length === 0) {
+        alert('No radio traffic to export.');
+        return;
+      }
+
+      var lines = [];
+      lines.push('# Outpost Conduit — Radio Traffic Log');
+      lines.push('');
+      lines.push('**Exported:** ' + new Date().toISOString());
+      lines.push('**Total entries:** ' + entries.length);
+      lines.push('');
+      lines.push('---');
+      lines.push('');
+      lines.push('| # | Time | Source IP | MAC | Device | Services | Hostnames |');
+      lines.push('|---|---|---|---|---|---|---|');
+
+      for (var i = 0; i < entries.length; i++) {
+        var e = entries[i];
+        lines.push(
+          '| ' + (i + 1) +
+          ' | ' + (e.logged_at || e.timestamp || '') +
+          ' | ' + (e.src_ip || '') +
+          ' | ' + (e.src_mac || '') +
+          ' | ' + (e.device_info || '') +
+          ' | ' + (e.services || []).join(', ') +
+          ' | ' + (e.hostnames || []).join(', ') +
+          ' |'
+        );
+      }
+
+      var md = lines.join('\n');
+      var blob = new Blob([md], {type: 'text/markdown'});
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'radio-log-' + new Date().toISOString().slice(0, 19).replace(/:/g, '') + '.md';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Export failed: ' + err.message);
     }
   },
 
