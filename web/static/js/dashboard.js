@@ -37,6 +37,10 @@ window.DashboardView = {
       window.removeEventListener('stats-update', this._listener);
       this._listener = null;
     }
+    if (this._captureWs) {
+      this._captureWs.close();
+      this._captureWs = null;
+    }
   },
 
   _renderData(container, data) {
@@ -169,12 +173,43 @@ window.DashboardView = {
     // --- Health status panel ---
     html += this._renderHealth(sites);
 
+    // --- Live multicast capture ---
+    html += '<div class="panel" style="margin-top:1.5rem">';
+    html += '<div class="panel-header">';
+    html += '<span class="panel-title">Live Multicast Traffic</span>';
+    html += '<div class="flex items-center gap-sm">';
+    html += '<button class="btn btn-primary btn-sm" id="dashCaptureToggle">Start Capture</button>';
+    html += '<button class="btn btn-ghost btn-sm" id="dashCaptureClear">Clear</button>';
+    html += '<span class="text-muted text-xs" id="dashCaptureCount">0 packets</span>';
+    html += '</div>';
+    html += '</div>';
+    html += '<div id="dashCaptureLog" class="log-output" style="max-height:300px;font-size:11px;min-height:80px"></div>';
+    html += '</div>';
+
     html += '</div>'; // .container
 
     container.innerHTML = html;
 
     // Load existing health data
     this._loadHealth();
+
+    // Bind capture buttons
+    this._capturePacketCount = 0;
+    this._captureWs = null;
+    var toggleBtn = document.getElementById('dashCaptureToggle');
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', () => this._toggleCapture());
+    }
+    var clearBtn = document.getElementById('dashCaptureClear');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => {
+        var log = document.getElementById('dashCaptureLog');
+        if (log) log.textContent = '';
+        this._capturePacketCount = 0;
+        var cnt = document.getElementById('dashCaptureCount');
+        if (cnt) cnt.textContent = '0 packets';
+      });
+    }
 
     // Bind "Run All Tests Now" button
     var runBtn = document.getElementById('dashRunHealth');
@@ -343,6 +378,100 @@ window.DashboardView = {
     } catch (err) {
       alert('Restart failed: ' + err.message);
     }
+  },
+
+  _toggleCapture() {
+    var btn = document.getElementById('dashCaptureToggle');
+    if (this._captureWs) {
+      // Stop capture
+      this._captureWs.close();
+      this._captureWs = null;
+      if (btn) {
+        btn.textContent = 'Start Capture';
+        btn.className = 'btn btn-primary btn-sm';
+      }
+      return;
+    }
+
+    // Start capture
+    if (btn) {
+      btn.textContent = 'Stop Capture';
+      btn.className = 'btn btn-danger btn-sm';
+    }
+
+    var proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    var url = proto + '//' + window.location.host + '/api/ws/multicast?token=' + encodeURIComponent(Auth.getToken());
+    var ws = new WebSocket(url);
+    this._captureWs = ws;
+    var self = this;
+
+    ws.onmessage = function(event) {
+      try {
+        var pkt = JSON.parse(event.data);
+        if (pkt.type === 'keepalive') return;
+        if (pkt.type !== 'packet') return;
+
+        self._capturePacketCount++;
+        var cnt = document.getElementById('dashCaptureCount');
+        if (cnt) cnt.textContent = self._capturePacketCount + ' packets';
+
+        var log = document.getElementById('dashCaptureLog');
+        if (!log) return;
+
+        var line = document.createElement('div');
+        line.style.cssText = 'display:flex;gap:0.75rem;white-space:nowrap';
+
+        // Timestamp
+        var ts = document.createElement('span');
+        ts.style.color = '#64748b';
+        ts.textContent = pkt.timestamp || '';
+        line.appendChild(ts);
+
+        // Protocol badge
+        var proto = document.createElement('span');
+        proto.style.cssText = 'min-width:50px';
+        var pcolor = pkt.protocol === 'mDNS' ? '#22c55e' : pkt.protocol === 'SSDP' ? '#eab308' : pkt.protocol === 'Relay' ? '#a78bfa' : '#60a5fa';
+        proto.style.color = pcolor;
+        proto.textContent = pkt.protocol || 'UDP';
+        line.appendChild(proto);
+
+        // Source → Dest
+        var flow = document.createElement('span');
+        flow.style.color = '#e0e0e0';
+        var srcIp = pkt.src_ip || '?';
+        var dstIp = pkt.dst_ip || '?';
+        var srcPort = pkt.src_port || '';
+        var dstPort = pkt.dst_port || '';
+        flow.textContent = srcIp + ':' + srcPort + ' \u2192 ' + dstIp + ':' + dstPort;
+        line.appendChild(flow);
+
+        // Size
+        if (pkt.length) {
+          var sz = document.createElement('span');
+          sz.style.color = '#64748b';
+          sz.textContent = pkt.length + 'B';
+          line.appendChild(sz);
+        }
+
+        log.appendChild(line);
+
+        // Auto-scroll and limit to 200 lines
+        log.scrollTop = log.scrollHeight;
+        while (log.childNodes.length > 200) {
+          log.removeChild(log.firstChild);
+        }
+      } catch (e) {
+        // ignore parse errors
+      }
+    };
+
+    ws.onclose = function() {
+      self._captureWs = null;
+      if (btn) {
+        btn.textContent = 'Start Capture';
+        btn.className = 'btn btn-primary btn-sm';
+      }
+    };
   },
 
   _exportAll() {

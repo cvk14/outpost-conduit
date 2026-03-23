@@ -110,6 +110,7 @@ from web.routes.deploy_routes import router as deploy_router, ssh_ws_router  # n
 from web.routes.enroll_routes import router as enroll_router  # noqa: E402
 from web.routes.diagnostics_routes import router as diagnostics_router  # noqa: E402
 from web.routes.settings_routes import router as settings_router  # noqa: E402
+from web.routes.mcast_capture_routes import router as mcast_capture_router  # noqa: E402
 
 app.include_router(auth_router)
 app.include_router(status_router)
@@ -121,6 +122,7 @@ app.include_router(ssh_ws_router)
 app.include_router(enroll_router)
 app.include_router(diagnostics_router)
 app.include_router(settings_router)
+app.include_router(mcast_capture_router)
 
 
 @app.get("/", response_class=HTMLResponse)
